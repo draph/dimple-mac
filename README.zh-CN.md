@@ -2,30 +2,90 @@
 
 [English](README.md) | 简体中文
 
-macOS 文件夹图标工具，使用 Tauri v2、React、TypeScript、Vite 和 Tailwind。
-独立维护的 Folderify 图形界面项目（folderify-gui），以 [lgarron/folderify](https://github.com/lgarron/folderify) 为参考，并非其官方桌面版本。
-目前是 T01 工程原型：只有启动面板和只读原生连接检查，尚不能设置文件夹图标。
+> 开发中。本文是首版使用说明草稿，描述目标产品行为，不代表当前实现进度。目前尚无公开安装包；下载信息、支持系统和签名状态将在公开前按实际发布包核实。
 
-## 安装与使用状态
+一款 macOS 菜单栏工具，为文件夹添加具有原生凹陷质感的自定义图标。选中文件夹、选择徽标、应用，在同一个面板完成。
 
-目前没有可供普通用户安装的正式版本，需按下文从源码启动。原型只显示工程状态，尚不能选择目录、预览或应用图标，不应当作可用的图标工具。
+Folderify Desktop 是独立维护的图形界面项目，以 [lgarron/folderify](https://github.com/lgarron/folderify) 为参考，并非其官方桌面版本。使用 Tauri v2、Rust、React、TypeScript、Vite 和 Tailwind。
 
-尚未接入 Finder 读取，不会申请 Finder 自动化权限；后续支持首次实际读取时申请，拒绝后仍可手动选择。当前原型面板与原生菜单已包含简体中文和英文资源；启动时跟随 macOS 应用语言，无匹配时回退英文。修改系统中的应用语言后重新启动生效，不提供应用内语言设置。后续功能的英文翻译仍在 T18-L 验收。
+## 功能
 
-## 开发
+- 为单个文件夹或最多 100 个文件夹批量应用图标。
+- 选择内置图标、导入透明 PNG 或静态 SVG，或输入单行 1–4 个可见字符作为徽标。
+- 实时预览，可按需调整缩放、位置和文件夹颜色。
+- 通过菜单栏、全局快捷键或 Finder 右键服务打开面板；支持向面板或菜单栏拖入文件夹或徽标文件。
+- 确认后恢复系统默认文件夹图标。
+- 离线使用，无账号、遥测、上传或运行时网络依赖。
+- 支持简体中文、英文、键盘操作及 VoiceOver。
 
-本机：Apple Silicon（arm64）、macOS 26.6.2、Xcode 27.2（SDK 27.2）、Node 24.18.0、npm 12.2.2、Rust 1.99.1。
-项目目录名为 `folderify-desktop`，应用显示名为 Folderify Desktop。
-Rust 版本由 `rust-toolchain.toml` 固定，依赖由 npm／Cargo lockfile 锁定。
+## 安装
+
+发布目标是面向 Apple Silicon 和 Intel Mac 的 Universal 应用及 DMG。最低 macOS 版本、已测硬件和存储组合、下载位置、SHA-256 及签名／公证状态将在公开前确定。构建配置中的系统版本不代表已经验证的支持范围。
+
+安装发布版时，打开 DMG，将 **Folderify Desktop** 拖入**应用程序**，然后启动。安装包自带运行所需资源，无需安装 Python、ImageMagick、Homebrew 或开发工具。
+
+遵循对应版本附带的签名和安装说明。未签名或未公证的构建须标为预发布；安装流程不要求关闭 macOS 安全保护。
+
+## 授权
+
+首次使用 Finder 选中项读取功能时，应用会请求 Finder 自动化权限。拒绝后仍可手动选择文件夹或将其拖入面板。需要修改权限时，在**系统设置 → 隐私与安全性 → 自动化**中查看 Folderify Desktop 对 Finder 的访问；系统名称可能因 macOS 版本而异。
+
+应用不自动提权。目标须为可写文件夹；系统保护目录和应用包会被拒绝。
+
+## 基本使用
+
+1. 在 Finder 中选中文件夹，点击菜单栏图标或按默认快捷键 **Option + F**。也可向面板拖入文件夹、使用文件夹选择器或调用 Finder 服务。
+2. 选择内置徽标、导入 PNG／SVG，或输入文字。预览在同一面板更新，无需展开调整区。
+3. 点击**应用**。如果会覆盖已有自定义图标，核对受影响目标后确认。
+
+Finder 不在前台时，请手动选择目标。手动选择的目标在重新打开面板时保留；**使用 Finder 所选**可主动替换。目标摘要及可展开列表显示将处理的文件夹，应用前可逐项移除。
+
+全部成功后，应用在成功提示结束时释放已处理目标；未固定面板时自动收起。空闲时按 **Esc** 可隐藏面板，隐藏不等于退出。菜单栏提供退出和设置入口；全局快捷键可在设置中修改或关闭。
+
+### 徽标与调整
+
+内置图标可按名称、分类或中英文关键词搜索。导入时一次选择一张 PNG 或静态 SVG，文件不超过 10 MiB；栅格化输入单边不超过 4096 像素，总像素不超过 1600 万。SVG 不支持脚本、外部资源、嵌入 HTML 和动画。
+
+徽标使用图像透明度，而非图像颜色。透明留白不参与缩放定位；完全不透明的 PNG 会形成实心矩形。文字支持单行 1–4 个中文、英文或数字等可见字符，纯空白和无法显示的字形会被拒绝。
+
+展开**调整**可修改缩放、水平／垂直位置及文件夹颜色。预设包括原生蓝、红、橙、黄、绿、紫、灰，也可使用自定义颜色。**重置参数**保留目标和徽标，仅恢复调整参数，不修改磁盘上的图标。
+
+### 恢复默认与处理部分结果
+
+在次要操作菜单中选择**恢复默认图标**并确认目标。该操作清除自定义图标，让 Finder 使用系统默认图标，**不会找回之前的自定义图标**。覆盖和恢复均不提供备份或撤销。
+
+批量结果区分成功、失败和未执行目标。**重试失败项**只重试允许安全重试的失败目标；**继续剩余项**沿用原操作和调整参数，处理尚未开始的目标，跳过成功项。**停止剩余项**会等待当前写入结束，再停止后续目标。
+
+系统写入耗时较长时，请等待结果；超时不代表写入已取消，结果未确定时不能重试。写入成功后，Finder 可能需要一些时间刷新显示。结果确定后可直接开始新编辑；接受有效新编辑会清除旧的重试／继续上下文。
+
+## 限制与隐私
+
+- 仅面向 macOS。发布时列出已测系统版本、架构和存储组合，不承诺未经验证的组合可用。
+- 每次最多处理 100 个文件夹，不递归处理其内容。符号链接会解析到实际文件夹，并要求确认。
+- 外接盘、网络盘和云同步目录取决于权限及文件系统行为，不保证图标跨设备同步。
+- 固定使用 Big Sur 浅色原生蓝作为文件夹底图基准，不随系统版本或界面深浅色切换。文件夹着色与应用界面深浅色相互独立。
+- 预览和调参不写入目标；应用和恢复只修改文件夹图标元数据，不修改文件夹正文内容。
+- 退出后不保存目标路径、导入素材或编辑草稿；快捷键设置会保存。日志不得包含完整私人路径、素材内容或凭据。
+- 不提供独立 PNG／ICNS 导出、编辑历史、旧图标备份／撤销、预设管理、自动更新或插件市场。
+
+## 语言
+
+应用跟随 macOS 为其解析的首选支持语言，在简体中文和英文中选择，无匹配时回退英文。在 macOS 设置中修改应用语言后，重新启动生效；不提供应用内语言选择器。语言只影响呈现，不改变文件夹名称、路径或用户输入的徽标文字。
+
+## 从源码构建
+
+使用 Node.js 24、npm 12、`rust-toolchain.toml` 固定的 Rust 工具链，以及带 macOS SDK 的 Xcode 或 Command Line Tools。尚未安装 Rust 时，先通过 [rustup.rs](https://rustup.rs/) 安装。依赖由 npm 和 Cargo lockfile 固定。
 
 ```sh
-# 首次安装开发依赖；已有 Rust 可跳过工具链安装
-# Rust 通过 https://rustup.rs/ 安装，再加载用户级环境
+git clone --recurse-submodules https://github.com/draph/folderify-desktop.git
+cd folderify-desktop
 source "$HOME/.cargo/env"
 npm ci
 git submodule update --init --recursive
 npm run tauri dev
 ```
+
+执行检查并构建原生可执行文件：
 
 ```sh
 npm run typecheck
@@ -33,44 +93,23 @@ npm test
 npm run build
 npm run check:rust
 npm run tauri build -- --no-bundle
-# 后续交付阶段：安装两个 Rust target 后构建 Universal 应用和 DMG
+```
+
+构建 Universal 应用和 DMG：
+
+```sh
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
 ```
 
-`npm run check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。前端检查同时覆盖 UI 与 Vite 配置。
-`npm test` 使用 Node 24 内置 TypeScript 支持，检查本地化键、命名参数、回退及错误显示；Rust 测试覆盖会话／错误序列化和 locale 归一化。前端与原生菜单共用 `src/locales/` 资源。原生错误采用 `code`、`params` 和可选 `targetId`，不向用户显示原始拒绝字符串。
-所有文件夹写入测试必须仅使用独立临时目录。
+构建产物位于 `src-tauri/target/` 下。完成打包本身不代表已签名、公证或通过运行兼容性验证。`check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。文件夹写入测试必须使用隔离临时目录。
 
-## 上游与资源
+## 卸载
 
-只读参考子模块：`upstream/folderify`，来源 https://github.com/lgarron/folderify 。
-固定提交：`16de35dd0ee94be4eae046dde709949b5d779e48`。
-真实模板目录：`src/resources/folders/`，包括 Big Sur 和 Tahoe 的多尺寸 iconset。
-仓库 MIT 声明不能单独证明 Apple 图像再分发授权，默认模板仍待确定，当前应用不引用这些资源。
+如果希望恢复系统默认图标，请先在应用中执行恢复。从菜单栏退出 Folderify Desktop，再将其从**应用程序**移至废纸篓。删除应用不会清除已经应用的文件夹图标，也不会恢复被覆盖的自定义图标。源码目录和开发工具链独立管理。
 
-## 工程原型验证（2026-11-06）
+## 许可与上游
 
-以下为 T01 历史验证；本轮改名后的检查结果另记于任务文档。构建产物名称已随项目改名更新。
+项目代码采用 [MIT 许可](LICENSE)。只读参考子模块 `upstream/folderify` 固定提交为 `16de35dd0ee94be4eae046dde709949b5d779e48`；默认模板为该子模块中的 `src/resources/folders/GenericFolderIcon.BigSur.iconset/`。
 
-- `npm run typecheck`、`npm run build`、`cargo check --manifest-path src-tauri/Cargo.toml` 通过。
-- `npm run check:rust` 通过：fmt、Clippy（零警告）、1 个单元测试。
-- `npm run tauri dev` 编译并启动；已配置开发专用 CSP，允许本机 Vite 热更新连接。
-- `npm run tauri build -- --debug --bundles app` 通过；调试包在 `src-tauri/target/debug/bundle/macos/Folderify Desktop.app`。
-- 原生 UI 检查确认本地 `tauri://localhost` 页面显示“原生服务已连接 · v0.1.0”。
-- 调试应用 28.36 MiB，不作为 release 体积或最终交付验收结果。
-
-## 当前限制
-
-- 目标选择、图标生成、菜单栏、Finder 集成和设置／恢复图标尚未实现。
-- 配置中的 macOS 10.15 是框架构建候选下限，不代表已经验证支持；目前只有本机环境可供验证。
-- 尚无 Intel／最低版本运行、Universal 构建、性能、签名、公证或安装包验收证据。
-- 不公开发布，不自动请求 Finder 权限。当前默认应用图标来自官方工程模板，产品图标尚未确定。
-
-## 卸载开发原型
-
-停止 `npm run tauri dev` 并删除自行复制的调试应用包即可。原型尚不保存目标、素材或设置，也没有实现文件夹图标写入。源码和开发工具链独立管理，删除应用不会自动删除它们。
-
-## 许可
-
-项目代码采用 MIT，见 LICENSE。上游及第三方素材需分别核实，安装包的第三方声明在打包阶段补齐。
+项目以上游固定仓库的 MIT 声明作为所选模板的使用依据。资源来源、上游许可原文及已记录的限制见[第三方声明](THIRD_PARTY_NOTICES.md)。其他第三方素材保留各自许可。
