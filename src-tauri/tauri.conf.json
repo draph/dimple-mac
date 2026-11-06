@@ -40,11 +40,13 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "infoPlist": "Info.plist"
     },
     "resources": {
       "resources/en.lproj/": "en.lproj/",
-      "resources/zh-Hans.lproj/": "zh-Hans.lproj/"
+      "resources/zh-Hans.lproj/": "zh-Hans.lproj/",
+      "icons/Assets.car": "Assets.car"
     }
   }
 }
