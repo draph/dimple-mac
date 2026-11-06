@@ -11,7 +11,7 @@ This is currently the T01 engineering prototype: a startup panel and a read-only
 
 No production version is available for installation. Start the prototype from source using the instructions below. It only displays engineering status; target selection, previews, and icon application are not implemented.
 
-Finder selection is not implemented, so the prototype does not request Finder automation permission. The planned behavior is to request permission only when reading Finder selections, with manual selection available if permission is denied. Chinese and English UI support is planned; the current prototype UI is Chinese.
+Finder selection is not implemented, so the prototype does not request Finder automation permission. The planned behavior is to request permission only when reading Finder selections, with manual selection available if permission is denied. The current prototype includes Simplified Chinese and English resources for its panel and native menus. At startup, it follows the macOS application language and falls back to English. Restart after changing the application language; there is no in-app language setting. Future feature translations remain part of T18-L.
 
 ## Development
 
@@ -29,6 +29,7 @@ npm run tauri dev
 
 ```sh
 npm run typecheck
+npm test
 npm run build
 npm run check:rust
 npm run tauri build -- --no-bundle
@@ -38,7 +39,7 @@ npm run tauri build -- --target universal-apple-darwin
 ```
 
 `npm run check:rust` runs fmt, Clippy (warnings are errors), and unit tests. Frontend type checks cover both the UI and Vite configuration.
-There are no frontend business-logic tests yet; the native session interface has a serialization test.
+`npm test` uses Node 24’s built-in TypeScript support to check localization keys, named parameters, fallback, and error presentation. Rust tests cover session/error serialization and locale normalization. Resources are shared by the UI and native menus in `src/locales/`. Native errors use `code`, `params`, and optional `targetId`; raw rejection strings are never shown to users.
 All future folder-writing tests must use isolated temporary directories.
 
 ## Upstream and assets

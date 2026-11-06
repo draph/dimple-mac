@@ -10,7 +10,7 @@ macOS 文件夹图标工具，使用 Tauri v2、React、TypeScript、Vite 和 Ta
 
 目前没有可供普通用户安装的正式版本，需按下文从源码启动。原型只显示工程状态，尚不能选择目录、预览或应用图标，不应当作可用的图标工具。
 
-尚未接入 Finder 读取，不会申请 Finder 自动化权限；后续支持首次实际读取时申请，拒绝后仍可手动选择。中英文界面支持仍在计划中，目前原型为中文。
+尚未接入 Finder 读取，不会申请 Finder 自动化权限；后续支持首次实际读取时申请，拒绝后仍可手动选择。当前原型面板与原生菜单已包含简体中文和英文资源；启动时跟随 macOS 应用语言，无匹配时回退英文。修改系统中的应用语言后重新启动生效，不提供应用内语言设置。后续功能的英文翻译仍在 T18-L 验收。
 
 ## 开发
 
@@ -29,6 +29,7 @@ npm run tauri dev
 
 ```sh
 npm run typecheck
+npm test
 npm run build
 npm run check:rust
 npm run tauri build -- --no-bundle
@@ -38,7 +39,7 @@ npm run tauri build -- --target universal-apple-darwin
 ```
 
 `npm run check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。前端检查同时覆盖 UI 与 Vite 配置。
-本阶段尚无前端业务逻辑测试；原生会话接口有序列化自检。
+`npm test` 使用 Node 24 内置 TypeScript 支持，检查本地化键、命名参数、回退及错误显示；Rust 测试覆盖会话／错误序列化和 locale 归一化。前端与原生菜单共用 `src/locales/` 资源。原生错误采用 `code`、`params` 和可选 `targetId`，不向用户显示原始拒绝字符串。
 所有文件夹写入测试必须仅使用独立临时目录。
 
 ## 上游与资源
