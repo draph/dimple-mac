@@ -1,0 +1,3 @@
+[submodule "upstream/folderify"]
+	path = upstream/folderify
+	url = https://github.com/lgarron/folderify.git

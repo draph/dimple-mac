@@ -1,0 +1,22 @@
+@import "tailwindcss";
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202a35;
+  background: #f4f6f9;
+  color-scheme: light dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+body { margin: 0; min-width: 360px; }
+h1 { margin: 8px 0; font-size: 28px; font-weight: 650; }
+h2 { font-size: 17px; font-weight: 600; }
+.eyebrow { color: #3278ad; font-size: 12px; letter-spacing: .18em; }
+.muted { color: #627084; line-height: 1.7; }
+.empty { padding: 30px 20px; text-align: center; border: 1px dashed #a7b5c5; border-radius: 20px; }
+.folder { display: block; color: #3278ad; font-size: 72px; line-height: 1.2; }
+@media (prefers-color-scheme: dark) {
+  :root { color: #e7edf5; background: #19212b; }
+  .muted { color: #a4b2c5; }
+  .eyebrow, .folder { color: #78c4ff; }
+  .empty { border-color: #526175; }
+}
