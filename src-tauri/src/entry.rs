@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Mutex, MutexGuard},
+};
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, Default, serde::Serialize)]
@@ -11,8 +14,17 @@ pub struct Snapshot {
     items: Vec<InputItem>,
     error: Option<String>,
     choosing: bool,
-    reading: bool,
+    #[serde(rename = "reading", serialize_with = "serialize_reading")]
+    active_read: Option<u64>,
+    #[serde(skip)]
+    read_counter: u64,
     checking: bool,
+}
+fn serialize_reading<S>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_bool(value.is_some())
 }
 #[derive(Clone, serde::Serialize)]
 pub struct InputItem {
@@ -21,13 +33,16 @@ pub struct InputItem {
 }
 #[derive(Default)]
 pub struct Inbox(Mutex<Snapshot>);
+fn commit_update(app: &tauri::AppHandle, mut state: MutexGuard<'_, Snapshot>) {
+    state.revision += 1;
+    drop(state);
+    let _ = app.emit("entry-changed", ());
+}
 fn update(app: &tauri::AppHandle, f: impl FnOnce(&mut Snapshot)) {
     let state = app.state::<Inbox>();
     let mut state = state.0.lock().unwrap();
     f(&mut state);
-    state.revision += 1;
-    drop(state);
-    let _ = app.emit("entry-changed", ());
+    commit_update(app, state);
 }
 pub fn error(app: &tauri::AppHandle, code: &str) {
     update(app, |s| s.error = Some(code.into()));
@@ -46,10 +61,10 @@ pub fn receive(app: &tauri::AppHandle, source: &str, paths: Vec<PathBuf>) {
         }
         s.checking = true;
         s.request += 1;
-        s.revision += 1;
-        s.request
+        let revision = s.request;
+        commit_update(&app, s);
+        revision
     };
-    let _ = app.emit("entry-changed", ());
     tauri::async_runtime::spawn_blocking(move || {
         let checked = check_paths(paths);
         update(&app, |s| {
@@ -164,10 +179,16 @@ pub fn wake(app: &tauri::AppHandle) {
     let hidden = app
         .get_webview_window("main")
         .is_some_and(|w| !w.is_visible().unwrap_or(true));
-    let automatic = {
-        let s = app.state::<Inbox>();
-        let s = s.0.lock().unwrap();
-        hidden && (s.items.is_empty() || s.source == "finder-auto")
+    let (automatic, _) = {
+        let state = app.state::<Inbox>();
+        let mut state = state.0.lock().unwrap();
+        let plan = plan_wake(&mut state, hidden);
+        if plan.1 {
+            commit_update(app, state);
+        } else {
+            drop(state);
+        }
+        plan
     };
     let finder = crate::macos::finder_is_frontmost();
     show(app);
@@ -193,10 +214,11 @@ pub fn choose_targets(app: tauri::AppHandle) {
     {
         let state = app.state::<Inbox>();
         let mut s = state.0.lock().unwrap();
-        if s.choosing || s.reading || s.checking {
+        if s.choosing || s.active_read.is_some() || s.checking {
             return;
         }
         s.choosing = true;
+        commit_update(&app, s);
     }
     app.dialog().file().pick_folders(move |files| {
         update(&app, |s| s.choosing = false);
@@ -214,29 +236,72 @@ pub fn finder_selection(app: tauri::AppHandle) {
     read_finder(app, false);
 }
 fn read_finder(app: tauri::AppHandle, automatic: bool) {
-    let revision = {
+    let (revision, generation) = {
         let state = app.state::<Inbox>();
-        let mut s = state.0.lock().unwrap();
-        if s.reading || s.choosing || s.checking {
+        let mut state = state.0.lock().unwrap();
+        if state.active_read.is_some() || state.choosing || state.checking {
             return;
         }
-        s.reading = true;
-        s.revision += 1;
-        s.request += 1;
-        s.request
+        state.read_counter += 1;
+        state.active_read = Some(state.read_counter);
+        state.request += 1;
+        let revision = state.request;
+        let generation = state.read_counter;
+        commit_update(&app, state);
+        (revision, generation)
     };
-    let _ = app.emit("entry-changed", ());
     tauri::async_runtime::spawn_blocking(move || {
-        let result = finder_paths().and_then(check_paths);
-        update(&app, |s| {
-            let current = s.request == revision;
-            s.reading = false;
-            if !current {
-                return;
-            }
-            finish_finder(s, automatic, result);
-        });
+        if !read_is_current(&app, generation) {
+            return;
+        }
+        let result = match finder_paths() {
+            Ok(paths) if read_is_current(&app, generation) => check_paths(paths),
+            Ok(_) => return,
+            Err(error) => Err(error),
+        };
+        let state = app.state::<Inbox>();
+        let mut state = state.0.lock().unwrap();
+        if state.active_read != Some(generation) {
+            return;
+        }
+        complete_read(&mut state, generation, revision, automatic, result);
+        commit_update(&app, state);
     });
+}
+fn read_is_current(app: &tauri::AppHandle, generation: u64) -> bool {
+    let state = app.state::<Inbox>();
+    let s = state.0.lock().unwrap();
+    s.active_read == Some(generation)
+}
+fn plan_wake(s: &mut Snapshot, hidden: bool) -> (bool, bool) {
+    let automatic = hidden && (s.items.is_empty() || s.source == "finder-auto");
+    // A new activation decides again; any read already in flight must not answer it.
+    let invalidated = automatic && invalidate_read(s);
+    (automatic, invalidated)
+}
+fn invalidate_read(s: &mut Snapshot) -> bool {
+    if s.active_read.is_none() {
+        return false;
+    }
+    s.active_read = None;
+    true
+}
+fn complete_read(
+    s: &mut Snapshot,
+    generation: u64,
+    revision: u64,
+    automatic: bool,
+    result: Result<Vec<InputItem>, &'static str>,
+) {
+    // A newer read owns the state; this result cannot clear or replace it.
+    if s.active_read != Some(generation) {
+        return;
+    }
+    s.active_read = None;
+    if s.request != revision {
+        return;
+    }
+    finish_finder(s, automatic, result);
 }
 fn finish_finder(s: &mut Snapshot, automatic: bool, result: Result<Vec<InputItem>, &'static str>) {
     if automatic {
@@ -360,6 +425,133 @@ mod tests {
                 assert!(s.error.is_some());
             }
         }
+    }
+    #[test]
+    fn stale_reads_do_not_replace_a_newer_wake_decision() {
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            request: 1,
+            ..Default::default()
+        };
+        assert!(super::invalidate_read(&mut s));
+        assert_eq!(s.active_read, None);
+        s.error = Some("finderInactive".into());
+        super::complete_read(
+            &mut s,
+            1,
+            1,
+            true,
+            Ok(vec![super::InputItem {
+                path: "/tmp/old".into(),
+                kind: "directory",
+            }]),
+        );
+        assert!(s.items.is_empty());
+        assert_eq!(s.error.as_deref(), Some("finderInactive"));
+    }
+    #[test]
+    fn invalidated_reads_do_not_clear_a_newer_read() {
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            request: 1,
+            ..Default::default()
+        };
+        assert!(super::invalidate_read(&mut s));
+        s.active_read = Some(2);
+        s.read_counter = 2;
+        s.request += 1;
+        super::complete_read(&mut s, 1, 1, true, Err("finderFailed"));
+        assert_eq!(s.active_read, Some(2));
+        assert_eq!(s.error, None);
+        let (generation, revision) = (s.read_counter, s.request);
+        super::complete_read(
+            &mut s,
+            generation,
+            revision,
+            true,
+            Ok(vec![super::InputItem {
+                path: "/tmp/new".into(),
+                kind: "directory",
+            }]),
+        );
+        assert_eq!(s.active_read, None);
+        assert_eq!(s.items.len(), 1);
+        assert_eq!(s.source, "finder-auto");
+    }
+    #[test]
+    fn wake_plan_invalidates_reads_only_for_an_automatic_activation() {
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            ..Default::default()
+        };
+        assert_eq!(super::plan_wake(&mut s, true), (true, true));
+        assert_eq!(s.active_read, None);
+
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            items: vec![super::InputItem {
+                path: "/tmp/manual".into(),
+                kind: "directory",
+            }],
+            source: "picker".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::plan_wake(&mut s, true), (false, false));
+        assert_eq!(s.active_read, Some(1));
+
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            items: vec![super::InputItem {
+                path: "/tmp/auto".into(),
+                kind: "directory",
+            }],
+            source: "finder-auto".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::plan_wake(&mut s, true), (true, true));
+        assert_eq!(s.active_read, None);
+
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            ..Default::default()
+        };
+        assert_eq!(super::plan_wake(&mut s, false), (false, false));
+        assert_eq!(s.active_read, Some(1));
+    }
+    #[test]
+    fn invalidate_read_clears_any_in_flight_read() {
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            ..Default::default()
+        };
+        assert!(super::invalidate_read(&mut s));
+        assert_eq!(s.active_read, None);
+        assert!(!super::invalidate_read(&mut s));
+    }
+    #[test]
+    fn superseded_input_keeps_a_completed_read_from_applying() {
+        let mut s = super::Snapshot {
+            active_read: Some(1),
+            read_counter: 1,
+            request: 5,
+            ..Default::default()
+        };
+        super::complete_read(&mut s, 1, 4, false, Err("finderDenied"));
+        assert_eq!(s.active_read, None);
+        assert_eq!(s.error, None);
+    }
+    #[test]
+    fn snapshot_serializes_active_read_as_boolean() {
+        let mut s = super::Snapshot::default();
+        assert_eq!(serde_json::to_value(&s).unwrap()["reading"], false);
+        s.active_read = Some(7);
+        assert_eq!(serde_json::to_value(&s).unwrap()["reading"], true);
     }
     #[test]
     fn snapshot_preserves_special_paths() {
