@@ -32,3 +32,10 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Isolated native-write probe; these dependencies are not shipped in the app.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2 = "=0.6.5"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSImage", "NSWorkspace"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSData"] }
+png = "=0.18.1"
