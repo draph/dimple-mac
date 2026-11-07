@@ -51,13 +51,37 @@ impl Locale {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppError {
-    pub code: &'static str,
+    pub code: String,
     pub params: BTreeMap<String, serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_id: Option<String>,
+}
+
+impl AppError {
+    pub fn reason(code: &str, reason: &str) -> Self {
+        Self {
+            code: code.into(),
+            params: BTreeMap::from([("reason".into(), reason.into())]),
+            target_id: None,
+        }
+    }
+    pub fn param(mut self, key: &str, value: impl Into<serde_json::Value>) -> Self {
+        self.params.insert(key.into(), value.into());
+        self
+    }
+    pub fn target(mut self, id: &str) -> Self {
+        self.target_id = Some(id.into());
+        self
+    }
+}
+
+impl From<&str> for AppError {
+    fn from(reason: &str) -> Self {
+        Self::reason("entry_error", reason)
+    }
 }
 
 #[cfg(test)]
@@ -75,7 +99,7 @@ mod tests {
     #[test]
     fn structured_errors_do_not_serialize_raw_messages() {
         let mut error = AppError {
-            code: "native_connection_failed",
+            code: "native_connection_failed".into(),
             params: BTreeMap::new(),
             target_id: None,
         };

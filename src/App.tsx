@@ -5,7 +5,7 @@ import { errorMessage, translate, type Locale, type Session } from "./i18n";
 import { Preview } from "./Preview";
 import "./App.css";
 
-type Entry = { revision: number; source: string; items: { path: string; kind: string }[]; error: string | null; choosing: boolean; reading: boolean; checking: boolean };
+import type { Entry } from "./contracts";
 export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [session, setSession] = useState<Session | null>(null);
@@ -31,7 +31,7 @@ export default function App() {
     );
     return () => { active = false; void listener.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
-  const busy = !entry || !session || entry.choosing || entry.reading || entry.checking;
+  const busy = !entry || !session || entry.choosing || entry.reading || entry.checking || entry.preparing;
   const command = (name: string, args?: Record<string, unknown>) => {
     setFailure(null);
     void invoke(name, args).catch(error => setFailure({ error }));
@@ -43,7 +43,7 @@ export default function App() {
         <h1>{t("app.name")}</h1>
         <button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button>
       </header>
-      <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking}>
+      <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
         <h2 id="target-heading">{t("entry.heading")}</h2>
         {entry?.items.length ? <>
           <p className="target-summary" title={entry.items.length === 1 ? entry.items[0].path : undefined}>
@@ -51,10 +51,10 @@ export default function App() {
           </p>
           <details>
             <summary>{t("entry.details")}</summary>
-            <ul className="target-list">{entry.items.map((item, index) => <li key={`${index}:${item.path}`}>
-              <div><strong>{name(item.path)}</strong><p className="path">{item.path}</p></div>
+            <ul className="target-list">{entry.items.map((item) => <li key={item.id}>
+              <div><strong>{name(item.path)}</strong><p className="path">{item.path}</p>{item.linked && <><p className="path">{translate(locale, "entry.actualPath", { path: item.actualPath })}</p><p>{t("entry.linkConfirmation")}</p></>}</div>
               <button className="quiet" disabled={busy} aria-label={translate(locale, "entry.removeName", { name: name(item.path) })}
-                onClick={() => command("remove_target", { expectedRevision: entry.revision, index })}>{t("entry.remove")}</button>
+                onClick={() => command("remove_target", { expectedRevision: entry.revision, targetId: item.id })}>{t("entry.remove")}</button>
             </li>)}</ul>
           </details>
         </> : <p className="empty">{t("entry.empty")}</p>}
@@ -64,7 +64,8 @@ export default function App() {
         </div>
         {entry?.reading && <p role="status" className="muted">{t("entry.reading")}</p>}
         {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
-        {entry?.error && <p role="alert" className="error">{t(`entry.${entry.error}`)}</p>}
+        {entry?.error && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
+        {!!entry?.issues.length && <ul aria-label={t("entry.invalidItems")}>{entry.issues.map((issue, index) => <li key={`${index}:${issue.path}`}><span className="path">{issue.path}</span><p role="alert">{errorMessage(locale, issue.error)}</p></li>)}</ul>}
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <h2 id="badge-heading">{t("badge.heading")}</h2>

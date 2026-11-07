@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 > Under development. This is a draft of the first-release user guide; it describes the intended product, not the current implementation status. No public installer is available yet. Download details, supported systems, and signing status will be finalized against the release build before publication.
 
-The current development build supports folder selection, target details and removal, and a built-in code-bracket preview. Applying icons, restoring defaults, and importing badges are not available yet.
+The current development build supports folder selection, target details and removal, and a built-in code-bracket preview. Targets are validated and deduplicated by directory identity, with per-item errors and symbolic-link details. Applying icons, restoring defaults, and importing badges are not available yet.
 
 A macOS menu bar app for giving folders custom icons with a native recessed look. Select folders, choose a badge, and apply—all in one panel.
 
@@ -66,6 +66,7 @@ If a system write takes longer than expected, wait for its result; a timeout doe
 - Each operation handles at most 100 folders and does not recurse into their contents. Symbolic links resolve to their actual folder targets and require confirmation.
 - External, network, and cloud-synced folders depend on their permissions and filesystem behavior; icons are not guaranteed to sync across devices.
 - The folder style is fixed to Big Sur light/native blue as its base, regardless of the running system or interface appearance. Changes to folder color are separate from the app's light/dark interface.
+- The writing design uses macOS file coordination and identity checks. Programs that bypass coordination can still replace a path after the final check; this is not a mandatory lock against every process.
 - Previewing and adjusting do not write to targets. Applying or restoring changes folder icon metadata, not folder contents.
 - Target paths, imported artwork, and editing drafts are not saved across app launches. Shortcut settings are saved. Logs must not include full private paths, artwork contents, or credentials.
 - There is no standalone PNG/ICNS export, edit history, icon backup/undo, preset manager, automatic updater, or plugin marketplace.

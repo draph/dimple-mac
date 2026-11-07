@@ -44,3 +44,13 @@ test("only registered structured errors produce specific messages", () => {
     }
   }
 });
+
+test("target and operation errors use bounded reason mappings", () => {
+  for (const locale of ["en", "zh-Hans"] as const) {
+    assert.equal(errorMessage(locale, {code: "target_changed", params: {reason: "changed"}}), translate(locale, "entry.changed"));
+    assert.equal(errorMessage(locale, {code: "permission_denied", params: {reason: "unwritable"}}), translate(locale, "error.unwritable"));
+    assert.equal(errorMessage(locale, {code: "invalid_input", params: {reason: "images"}}), translate(locale, "error.images"));
+    assert.equal(errorMessage(locale, {code: "entry_error", params: {reason: "budget"}}), translate(locale, "error.budget"));
+    assert.equal(errorMessage(locale, {code: "entry_error", params: {reason: "/private/unknown"}}), translate(locale, "error.generic"));
+  }
+});

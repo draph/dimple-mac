@@ -3,6 +3,8 @@ mod instance;
 pub mod localization;
 mod macos;
 mod native_menu;
+mod operation;
+mod targets;
 
 use localization::Locale;
 use tauri::Manager;
@@ -24,6 +26,9 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 pub fn run() {
+    if targets::worker() {
+        return;
+    }
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -104,7 +109,9 @@ pub fn run() {
             entry::get_entry,
             entry::choose_targets,
             entry::finder_selection,
-            entry::remove_target
+            entry::remove_target,
+            entry::prepare_operation,
+            entry::cancel_prepared
         ])
         .build(tauri::generate_context!())
         .expect("Failed to start Folderify Desktop")

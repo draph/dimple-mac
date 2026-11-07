@@ -2,11 +2,17 @@
 //! Run with `cargo run --manifest-path src-tauri/Cargo.toml --example icon_write_probe`.
 //! Only writes inside its own temporary root. Enter advances each Finder checkpoint.
 //! `--metadata-only` skips visual checkpoints and never claims Finder verification.
+//! `--identity-only` runs T07 identity candidates without Finder or the T03 stall.
+//! `--coordination-only` tests coordinated writes and the uncoordinated replacement limit.
 //! Known limits: small legacy representations differ on system readback; the controlled
 //! stall tests a CLI heartbeat, not UI/batch cancellation. Never ship this as a writer.
 use objc2::{AnyThread, rc::autoreleasepool};
 use objc2_app_kit::{NSImage, NSWorkspace, NSWorkspaceIconCreationOptions};
 use objc2_foundation::{NSData, NSString};
+#[path = "support/coordination.rs"]
+mod coordination;
+#[path = "support/identity.rs"]
+mod identity;
 use std::{
     error::Error,
     fs::{self, File},
@@ -315,6 +321,18 @@ fn run() -> Result<()> {
     }
     let root = TempRoot(PathBuf::from(String::from_utf8(output.stdout)?.trim_end()));
     let bytes = encode()?;
+    if std::env::args().any(|arg| arg == "--coordination-only") {
+        let path = root.path().to_owned();
+        return thread::spawn(move || coordination::run(&path, &bytes))
+            .join()
+            .map_err(|_| "E_COORDINATION_WORKER_PANIC")?;
+    }
+    if std::env::args().any(|arg| arg == "--identity-only") {
+        let path = root.path().to_owned();
+        return thread::spawn(move || identity::run(&path, &bytes))
+            .join()
+            .map_err(|_| "E_IDENTITY_WORKER_PANIC")?;
+    }
     let icns = root.path().join("probe.icns");
     fs::write(&icns, &bytes)?;
     assert!(

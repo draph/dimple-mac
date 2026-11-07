@@ -31,5 +31,19 @@ export function errorMessage(locale: Locale, error: unknown): string {
     && !Array.isArray(error.params) && Object.keys(error.params).length === 0) {
     return translate(locale, "error.nativeConnection");
   }
+  if (typeof error === "object" && error !== null && "code" in error && "params" in error && typeof error.params === "object" && error.params !== null && !Array.isArray(error.params)) {
+    const params = error.params as Record<string, unknown>;
+    const reason = params.reason;
+    if (error.code === "entry_error" && reason === "budget") return translate(locale, "error.budget");
+    const entryReasons = ["busy", "limit", "invalid", "finderInactive", "finderFailed", "finderDenied", "finderTimeout", "shortcutFailed", "checkFailed", "changed", "badgeUnavailable", "mixed", "empty"];
+    if (error.code === "entry_error" && typeof reason === "string" && entryReasons.includes(reason)) return translate(locale, `entry.${reason}`);
+    if (["invalid_input", "permission_denied", "target_changed", "busy", "timeout"].includes(String(error.code)) && typeof reason === "string") {
+      if (["changed"].includes(reason)) return translate(locale, "entry.changed");
+      if (reason === "busy") return translate(locale, "entry.busy");
+      if (reason === "check") return translate(locale, "entry.checkFailed");
+      if (reason === "limit") return translate(locale, "entry.limit");
+      if (["unavailable", "path", "protected", "application", "unwritable", "read_only", "budget", "type", "payload", "images", "params", "asset", "duplicate", "operation", "id"].includes(reason)) return translate(locale, `error.${reason}`);
+    }
+  }
   return translate(locale, "error.generic");
 }
