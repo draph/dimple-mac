@@ -48,11 +48,12 @@ pub struct Issue {
 pub struct Checked {
     pub items: Vec<Target>,
     pub issues: Vec<Issue>,
+    pub fingerprints: Vec<crate::icon::Fingerprint>,
 }
 #[derive(Serialize, Deserialize)]
 pub enum Request {
     Inspect(Vec<PathBuf>),
-    Revalidate(Vec<Target>),
+    Fingerprint(Vec<Target>),
 }
 fn failure(reason: &'static str) -> AppError {
     AppError::reason("invalid_input", reason)
@@ -141,6 +142,19 @@ fn inspect(path: PathBuf) -> Result<Target, AppError> {
         identity: Identity::read(&metadata),
     })
 }
+pub fn check_actual(target: &Target, path: &Path) -> Result<(), AppError> {
+    let now = inspect(path.to_owned())?;
+    if now.identity != target.identity || now.actual_path != target.actual_path {
+        return Err(AppError::reason("target_changed", "changed").target(&target.id));
+    }
+    Ok(())
+}
+pub fn revalidate(target: &Target) -> Result<(), AppError> {
+    for alias in &target.aliases {
+        check_actual(target, alias)?;
+    }
+    Ok(())
+}
 fn execute(request: Request) -> Result<Checked, AppError> {
     match request {
         Request::Inspect(paths) => {
@@ -193,20 +207,20 @@ fn execute(request: Request) -> Result<Checked, AppError> {
             }
             Ok(out)
         }
-        Request::Revalidate(targets) => {
-            for old in &targets {
-                for alias in &old.aliases {
-                    let now = inspect(alias.clone()).map_err(|_| {
-                        AppError::reason("target_changed", "changed").target(&old.id)
-                    })?;
-                    if now.actual_path != old.actual_path || now.identity != old.identity {
-                        return Err(AppError::reason("target_changed", "changed").target(&old.id));
-                    }
-                }
+        Request::Fingerprint(targets) => {
+            let mut fingerprints = Vec::new();
+            for target in &targets {
+                revalidate(target)?;
+                fingerprints.push(
+                    crate::icon::fingerprint(&target.actual_path)
+                        .map_err(|e| e.target(&target.id))?,
+                );
+                revalidate(target)?;
             }
             Ok(Checked {
                 items: targets,
                 issues: vec![],
+                fingerprints,
             })
         }
     }
@@ -368,7 +382,7 @@ mod tests {
         t[0].id = next_id("target");
         fs::rename(&p, root.0.join("moved")).unwrap();
         fs::create_dir(&p).unwrap();
-        assert!(execute(Request::Revalidate(t)).is_err());
+        assert!(revalidate(&t[0]).is_err());
     }
     #[test]
     fn unique_limit_is_after_deduplication_and_badges_are_atomic() {

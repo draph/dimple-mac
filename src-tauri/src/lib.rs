@@ -1,4 +1,5 @@
 mod entry;
+mod icon;
 mod instance;
 pub mod localization;
 mod macos;
@@ -22,7 +23,9 @@ fn get_session(session: tauri::State<'_, Session>) -> Session {
 
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
-    app.exit(0);
+    if !entry::request_quit(&app) {
+        app.exit(0);
+    }
 }
 
 pub fn run() {
@@ -44,7 +47,9 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.hide();
+                if entry::can_hide(window.app_handle()) {
+                    let _ = window.hide();
+                }
             }
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
                 entry::receive(window.app_handle(), "window-drop", paths.clone())
@@ -111,11 +116,18 @@ pub fn run() {
             entry::finder_selection,
             entry::remove_target,
             entry::prepare_operation,
-            entry::cancel_prepared
+            entry::cancel_prepared,
+            entry::get_operation,
+            entry::commit_operation
         ])
         .build(tauri::generate_context!())
         .expect("Failed to start Folderify Desktop")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event
+                && entry::request_quit(app)
+            {
+                api.prevent_exit();
+            }
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
                 entry::show(app);
             }

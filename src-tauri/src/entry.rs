@@ -18,12 +18,21 @@ pub struct Snapshot {
     preparing: bool,
     #[serde(skip)]
     prepared: Option<std::sync::Arc<operation::Prepared>>,
+    #[serde(skip)]
+    operation: Option<operation::Progress>,
+    #[serde(skip)]
+    quit_pending: bool,
     choosing: bool,
     #[serde(rename = "reading", serialize_with = "serialize_reading")]
     active_read: Option<u64>,
     #[serde(skip)]
     read_counter: u64,
     checking: bool,
+}
+impl Snapshot {
+    fn operation_locked(&self) -> bool {
+        self.prepared.is_some() || self.operation.as_ref().is_some_and(|p| p.busy())
+    }
 }
 fn serialize_reading<S>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -71,7 +80,7 @@ pub fn receive<R: tauri::Runtime>(app: &tauri::AppHandle<R>, source: &str, paths
     let revision = {
         let state = app.state::<Inbox>();
         let mut s = state.0.lock().unwrap();
-        if s.choosing || s.checking || s.preparing {
+        if s.operation_locked() || s.choosing || s.checking || s.preparing {
             drop(s);
             error(&app, "busy");
             return;
@@ -130,7 +139,7 @@ fn check_paths(paths: Vec<PathBuf>) -> Result<Vec<InputItem>, &'static str> {
     Ok(items)
 }
 fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
-    if s.choosing || s.preparing {
+    if s.operation_locked() || s.choosing || s.preparing {
         s.error = Some("busy".into());
         return;
     }
@@ -165,6 +174,7 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
     }
     s.items = valid;
     s.prepared = None;
+    s.operation = None;
     s.source = source.into();
     s.error = None;
 }
@@ -227,7 +237,7 @@ fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
         s.error = Some("changed".into());
         return;
     }
-    if s.choosing || s.checking || s.active_read.is_some() || s.preparing {
+    if s.operation_locked() || s.choosing || s.checking || s.active_read.is_some() || s.preparing {
         s.error = Some("busy".into());
         return;
     }
@@ -235,6 +245,7 @@ fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
     invalidate_read(s);
     s.items.remove(index);
     s.prepared = None;
+    s.operation = None;
     s.issues.clear();
     s.source = if s.items.is_empty() { "" } else { "manual" }.into();
     s.error = None;
@@ -245,7 +256,12 @@ pub fn choose_targets<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
     {
         let state = app.state::<Inbox>();
         let mut s = state.0.lock().unwrap();
-        if s.choosing || s.active_read.is_some() || s.checking || s.preparing {
+        if s.operation_locked()
+            || s.choosing
+            || s.active_read.is_some()
+            || s.checking
+            || s.preparing
+        {
             return;
         }
         s.choosing = true;
@@ -274,7 +290,8 @@ fn read_finder<R: tauri::Runtime>(
     let (revision, generation) = {
         let state = app.state::<Inbox>();
         let mut state = state.0.lock().unwrap();
-        if state.active_read.is_some()
+        if state.operation_locked()
+            || state.active_read.is_some()
             || state.choosing
             || state.checking
             || state.preparing
@@ -314,7 +331,8 @@ fn read_is_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, generation: u64
     s.active_read == Some(generation)
 }
 fn clear_automatic(s: &mut Snapshot, expected_request: u64) {
-    if s.request != expected_request
+    if s.operation_locked()
+        || s.request != expected_request
         || s.preparing
         || s.choosing
         || s.checking
@@ -326,12 +344,16 @@ fn clear_automatic(s: &mut Snapshot, expected_request: u64) {
     s.request += 1;
     s.items.clear();
     s.prepared = None;
+    s.operation = None;
     s.issues.clear();
     s.source.clear();
     s.error = Some("finderInactive".into());
 }
 fn plan_wake(s: &mut Snapshot, hidden: bool) -> (bool, bool) {
-    let automatic = !s.preparing && hidden && (s.items.is_empty() || s.source == "finder-auto");
+    let automatic = !s.operation_locked()
+        && !s.preparing
+        && hidden
+        && (s.items.is_empty() || s.source == "finder-auto");
     // A new activation decides again; any read already in flight must not answer it.
     let invalidated = automatic && invalidate_read(s);
     (automatic, invalidated)
@@ -364,6 +386,7 @@ fn finish_finder(s: &mut Snapshot, automatic: bool, result: Result<Vec<InputItem
     if automatic && !matches!(&result, Err("limit" | "mixed" | "budget")) {
         s.items.clear();
         s.prepared = None;
+        s.operation = None;
         s.issues.clear();
         s.source.clear();
     }
@@ -427,8 +450,11 @@ fn begin_prepare(
     s: &mut Snapshot,
     input: &operation::Request,
 ) -> Result<Vec<targets::Target>, AppError> {
-    if s.preparing || s.choosing || s.checking || s.active_read.is_some() {
+    if s.operation_locked() || s.preparing || s.choosing || s.checking || s.active_read.is_some() {
         return Err(AppError::reason("busy", "busy"));
+    }
+    if s.operation.is_some() {
+        return Err(crate::icon::error("edit"));
     }
     if s.revision != input.revision {
         return Err(AppError::reason("target_changed", "changed"));
@@ -484,8 +510,7 @@ pub async fn prepare_operation<R: tauri::Runtime>(
     };
     let result = tauri::async_runtime::spawn_blocking(move || {
         let images = operation::validate(&input)?;
-        targets::check(targets::Request::Revalidate(selected.clone()))?;
-        Ok::<_, AppError>(operation::Prepared::new(input, selected, images))
+        operation::Prepared::build(input, selected, images)
     })
     .await
     .unwrap_or_else(|_| Err(AppError::reason("invalid_input", "check")));
@@ -502,7 +527,7 @@ pub fn cancel_prepared<R: tauri::Runtime>(
 ) -> Result<(), AppError> {
     let inbox = app.state::<Inbox>();
     let mut s = inbox.0.lock().unwrap();
-    if s.preparing {
+    if s.preparing || s.operation.as_ref().is_some_and(|p| p.busy()) {
         return Err(AppError::reason("busy", "busy"));
     }
     if s.prepared.as_ref().is_none_or(|p| p.id != operation_id) {
@@ -511,6 +536,242 @@ pub fn cancel_prepared<R: tauri::Runtime>(
     s.prepared = None;
     commit_update(&app, s);
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationState {
+    revision: u64,
+    prepared: Option<operation::Summary>,
+    progress: Option<operation::Progress>,
+}
+#[tauri::command]
+pub fn get_operation<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> OperationState {
+    let inbox = app.state::<Inbox>();
+    let s = inbox.0.lock().unwrap();
+    OperationState {
+        revision: s.revision,
+        prepared: if s.operation.as_ref().is_some_and(|p| p.busy()) {
+            None
+        } else {
+            s.prepared.as_ref().map(|p| p.summary())
+        },
+        progress: s.operation.clone(),
+    }
+}
+fn claim_commit(
+    s: &mut Snapshot,
+    operation_id: &str,
+    token: Option<&str>,
+) -> Result<Option<std::sync::Arc<operation::Prepared>>, AppError> {
+    if let Some(progress) = &s.operation {
+        if progress.operation_id == operation_id {
+            return Ok(None);
+        }
+        if progress.busy() {
+            return Err(crate::icon::error("busy"));
+        }
+    }
+    let p = s
+        .prepared
+        .as_ref()
+        .filter(|p| p.id == operation_id)
+        .ok_or_else(|| crate::icon::error("operation"))?;
+    if p.needs_confirmation() && token != Some(p.token.as_str()) {
+        return Err(crate::icon::error("confirmation"));
+    }
+    s.operation = Some(operation::Progress::new(p));
+    Ok(Some(p.clone()))
+}
+#[tauri::command]
+pub fn commit_operation<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    operation_id: String,
+    confirmation_token: Option<String>,
+) -> Result<(), AppError> {
+    let p = {
+        let inbox = app.state::<Inbox>();
+        let mut s = inbox.0.lock().unwrap();
+        let p = claim_commit(&mut s, &operation_id, confirmation_token.as_deref())?;
+        commit_update(&app, s);
+        p
+    };
+    if let Some(p) = p {
+        tauri::async_runtime::spawn_blocking(move || execute_operation(app, p));
+    }
+    Ok(())
+}
+fn progress<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    f: impl FnOnce(&mut operation::Progress),
+) {
+    update(app, |s| {
+        if let Some(p) = s.operation.as_mut() {
+            f(p);
+            p.sequence += 1;
+        }
+    });
+}
+fn execute_operation<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    p: std::sync::Arc<operation::Prepared>,
+) {
+    use std::sync::mpsc;
+    // Recheck the entire batch before the first write, so stale consent never partially starts it.
+    match p.refreshed() {
+        Ok(mut current) if current.fingerprints != p.fingerprints => {
+            current.force_confirmation = true;
+            update(&app, |s| {
+                s.prepared = Some(std::sync::Arc::new(current));
+                s.operation = None;
+            });
+            finish_quit(&app);
+            return;
+        }
+        Err(e) => {
+            update(&app, |s| {
+                s.prepared = None;
+                let v = s.operation.as_mut().unwrap();
+                v.phase = "completed".into();
+                v.sequence += 1;
+                for item in &mut v.items {
+                    item.status = "failed".into();
+                    item.error = Some(e.clone());
+                }
+            });
+            finish_quit(&app);
+            return;
+        }
+        _ => {}
+    }
+    for index in 0..p.targets.len() {
+        {
+            let inbox = app.state::<Inbox>();
+            let mut s = inbox.0.lock().unwrap();
+            let quit = s.quit_pending;
+            let v = s.operation.as_mut().unwrap();
+            if quit || v.stopped {
+                break;
+            }
+            v.phase = "running".into();
+            v.items[index].status = "running".into();
+            v.slow = false;
+            v.sequence += 1;
+            commit_update(&app, s);
+        }
+        let (tx, rx) = mpsc::channel();
+        let writing = p.clone();
+        std::thread::spawn(move || {
+            let result = crate::icon::write(
+                &writing.targets[index],
+                &writing.fingerprints[index],
+                writing.icon.as_deref(),
+            );
+            let _ = tx.send(result);
+        });
+        let result = wait_for_write(
+            rx,
+            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(20),
+            |unknown| {
+                progress(&app, |v| {
+                    v.slow = true;
+                    if unknown {
+                        v.items[index].status = "unknown".into();
+                        v.stopped = true;
+                    }
+                });
+            },
+        );
+        // A missing result means the writer died and may still have written; fail closed.
+        let uncertain = result.as_ref().is_none_or(|r| {
+            r.as_ref()
+                .is_err_and(|e| e.params.get("reason").is_some_and(|r| r == "uncertain"))
+        });
+        progress(&app, |v| {
+            v.slow = false;
+            let item = &mut v.items[index];
+            if uncertain {
+                v.phase = "uncertain".into();
+                item.status = "unknown".into();
+                item.error = Some(crate::icon::error("uncertain"));
+                v.stopped = true;
+            } else {
+                match result.unwrap() {
+                    Ok(()) => item.status = "succeeded".into(),
+                    Err(e) => {
+                        item.status = "failed".into();
+                        item.error = Some(e);
+                    }
+                }
+            }
+        });
+        // A returned uncertain result keeps writes blocked, but no longer delays normal exit.
+        if uncertain {
+            finish_quit(&app);
+            return;
+        }
+    }
+    update(&app, |s| {
+        s.prepared = None;
+        let v = s.operation.as_mut().unwrap();
+        v.phase = "completed".into();
+        v.sequence += 1;
+    });
+    finish_quit(&app);
+}
+fn wait_for_write<T>(
+    rx: std::sync::mpsc::Receiver<T>,
+    slow: std::time::Duration,
+    uncertain: std::time::Duration,
+    mut feedback: impl FnMut(bool),
+) -> Option<T> {
+    use std::sync::mpsc::RecvTimeoutError;
+    match rx.recv_timeout(slow) {
+        Ok(r) => Some(r),
+        Err(RecvTimeoutError::Timeout) => {
+            feedback(false);
+            match rx.recv_timeout(uncertain) {
+                Ok(r) => Some(r),
+                Err(RecvTimeoutError::Timeout) => {
+                    feedback(true);
+                    // Never cancel a system write already in progress; wait for its definite result.
+                    rx.recv().ok()
+                }
+                Err(_) => None,
+            }
+        }
+        Err(_) => None,
+    }
+}
+pub fn request_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    let inbox = app.state::<Inbox>();
+    let mut s = inbox.0.lock().unwrap();
+    if s.operation
+        .as_ref()
+        .is_some_and(|p| p.phase == "checking" || p.phase == "running")
+    {
+        s.quit_pending = true;
+        if let Some(p) = &mut s.operation {
+            p.stopped = true;
+            p.sequence += 1;
+        }
+        commit_update(app, s);
+        show(app);
+        true
+    } else {
+        false
+    }
+}
+fn finish_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if app.state::<Inbox>().0.lock().unwrap().quit_pending {
+        app.exit(0);
+    }
+}
+pub fn can_hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    let inbox = app.state::<Inbox>();
+    let s = inbox.0.lock().unwrap();
+    !s.operation_locked() && !s.preparing && !s.choosing
 }
 
 #[cfg(test)]
@@ -529,6 +790,101 @@ mod tests {
                 .collect(),
             ..Default::default()
         }
+    }
+    fn completed_operation() -> crate::operation::Progress {
+        let request = crate::operation::parse(
+            r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
+        )
+        .unwrap();
+        let mut progress =
+            crate::operation::Progress::new(&crate::operation::Prepared::new(request, vec![]));
+        progress.phase = "completed".into();
+        progress
+    }
+    #[test]
+    fn commit_claim_is_single_use_and_confirmation_is_bound() {
+        let r = crate::operation::parse(
+            r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#,
+        )
+        .unwrap();
+        let p = std::sync::Arc::new(crate::operation::Prepared::new(r, vec![]));
+        let mut s = super::Snapshot {
+            prepared: Some(p.clone()),
+            ..Default::default()
+        };
+        assert!(super::claim_commit(&mut s, "forged", None).is_err());
+        assert!(super::claim_commit(&mut s, &p.id, None).is_err());
+        assert!(super::claim_commit(&mut s, &p.id, Some("forged")).is_err());
+        assert!(
+            super::claim_commit(&mut s, &p.id, Some(&p.token))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            super::claim_commit(&mut s, &p.id, Some(&p.token))
+                .unwrap()
+                .is_none()
+        );
+        assert!(s.operation_locked());
+        s.prepared = None;
+        assert!(super::claim_commit(&mut s, &p.id, None).unwrap().is_none());
+    }
+    #[test]
+    fn normal_quit_stops_scheduling_and_keeps_the_inflight_slot() {
+        let r = crate::operation::parse(
+            r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#,
+        )
+        .unwrap();
+        let p = std::sync::Arc::new(crate::operation::Prepared::new(r, vec![]));
+        let state = super::Snapshot {
+            prepared: Some(p.clone()),
+            operation: Some(crate::operation::Progress::new(&p)),
+            ..Default::default()
+        };
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        assert!(!super::can_hide(app.handle()));
+        assert!(super::request_quit(app.handle()));
+        use tauri::Manager;
+        let inbox = app.state::<super::Inbox>();
+        let mut s = inbox.0.lock().unwrap();
+        assert!(s.quit_pending);
+        assert!(s.operation.as_ref().unwrap().stopped);
+        assert!(s.operation_locked());
+        // A timed-out call is still running; a returned uncertain result is not in flight.
+        s.operation.as_mut().unwrap().phase = "uncertain".into();
+        assert!(s.operation_locked());
+        drop(s);
+        assert!(!super::request_quit(app.handle()));
+    }
+    #[test]
+    fn slow_feedback_keeps_tracking_the_late_result() {
+        use std::{sync::mpsc, time::Duration};
+        let (tx, rx) = mpsc::channel();
+        let mut feedback = Vec::new();
+        let result = super::wait_for_write(
+            rx,
+            Duration::from_millis(1),
+            Duration::from_millis(1),
+            |unknown| {
+                feedback.push(unknown);
+                if unknown {
+                    tx.send(42).unwrap();
+                }
+            },
+        );
+        assert_eq!(feedback, vec![false, true]);
+        assert_eq!(result, Some(42));
+        let (tx, rx) = mpsc::channel::<()>();
+        drop(tx);
+        assert_eq!(
+            super::wait_for_write(rx, Duration::ZERO, Duration::ZERO, |_| panic!(
+                "disconnected is uncertain immediately"
+            )),
+            None
+        );
     }
     #[test]
     fn operation_claim_rejects_stale_ids_duplicates_and_busy_inputs() {
@@ -608,7 +964,7 @@ mod tests {
             r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
         )
         .unwrap();
-        let prepared = crate::operation::Prepared::new(r, vec![], vec![]);
+        let prepared = crate::operation::Prepared::new(r, vec![]);
         assert!(super::finish_prepare(&mut s, old, Ok(prepared)).is_err());
         assert!(s.prepared.is_none());
     }
@@ -622,7 +978,6 @@ mod tests {
         s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
             request,
             vec![],
-            vec![],
         )));
         let operation = s.prepared.as_ref().unwrap().id.clone();
         let before = serde_json::to_value(&s.items).unwrap();
@@ -634,7 +989,8 @@ mod tests {
         }
     }
     #[test]
-    fn tauri_ipc_prepares_cancels_recovers_and_invalidates_operations() {
+    fn tauri_ipc_prepares_cancels_recovers_and_protects_confirmation() {
+        let _serial = crate::icon::NATIVE_TEST_LOCK.lock().unwrap();
         use serde_json::{Value, json};
         struct Temp(std::path::PathBuf);
         impl Drop for Temp {
@@ -642,8 +998,9 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
-        let temp = Temp(std::env::temp_dir().join(crate::targets::next_id("ipc")));
+        let mut temp = Temp(std::env::temp_dir().join(crate::targets::next_id("ipc")));
         std::fs::create_dir(&temp.0).unwrap();
+        temp.0 = std::fs::canonicalize(&temp.0).unwrap();
         let mut state = super::Snapshot::default();
         super::accept(
             &mut state,
@@ -656,6 +1013,8 @@ mod tests {
                 super::get_entry,
                 super::prepare_operation,
                 super::cancel_prepared,
+                super::commit_operation,
+                super::get_operation,
                 super::remove_target
             ])
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -696,7 +1055,7 @@ mod tests {
             json!({"size":size,"png":base64::engine::general_purpose::STANDARD.encode(std::fs::read(file).unwrap())})
         }).collect();
         let applied=prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0},"images":images})).unwrap();
-        assert_eq!(applied["commitAvailable"], false);
+        assert_eq!(applied["commitAvailable"], true);
         assert!(entry().get("prepared").is_none());
         ipc(
             "cancel_prepared",
@@ -704,7 +1063,7 @@ mod tests {
         )
         .unwrap();
         let prepared = prepare(json!({"type":"restore"})).unwrap();
-        assert_eq!(prepared["commitAvailable"], false);
+        assert_eq!(prepared["commitAvailable"], true);
         ipc(
             "cancel_prepared",
             json!({"operationId":prepared["operationId"]}),
@@ -726,39 +1085,123 @@ mod tests {
             json!({"expectedRevision":e["revision"],"targetId":e["items"][0]["id"]}),
         )
         .unwrap();
-        assert!(entry()["items"].as_array().unwrap().is_empty());
-        assert!(
-            ipc(
-                "cancel_prepared",
-                json!({"operationId":prepared["operationId"]})
-            )
-            .is_err()
-        );
-        super::receive(app.handle(), "service", vec![temp.0.clone()]);
-        for _ in 0..200 {
-            if entry()["checking"] == false {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
         assert_eq!(entry()["items"].as_array().unwrap().len(), 1);
-        let prepared = prepare(json!({"type":"restore"})).unwrap();
+        // Confirmation owns its target set; external inputs and edits cannot replace it.
         super::receive(app.handle(), "service", vec![temp.0.clone()]);
-        for _ in 0..200 {
-            if entry()["checking"] == false {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        assert!(
-            ipc(
-                "cancel_prepared",
-                json!({"operationId":prepared["operationId"]})
-            )
-            .is_err()
-        );
+        ipc(
+            "cancel_prepared",
+            json!({"operationId":prepared["operationId"]}),
+        )
+        .unwrap();
+        let e = entry();
+        ipc(
+            "remove_target",
+            json!({"expectedRevision":e["revision"],"targetId":e["items"][0]["id"]}),
+        )
+        .unwrap();
+        assert!(entry()["items"].as_array().unwrap().is_empty());
         assert!(entry().get("prepared").is_none());
         assert!(entry()["items"][0].get("aliases").is_none());
+        let select = || {
+            super::receive(app.handle(), "service", vec![temp.0.clone()]);
+            for _ in 0..1000 {
+                if entry()["checking"] == false {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert_eq!(entry()["items"].as_array().unwrap().len(), 1);
+        };
+        let op = || ipc("get_operation", json!({})).unwrap();
+        let wait = || {
+            for _ in 0..1000 {
+                let v = op();
+                if v["progress"]["phase"] == "completed" || v["prepared"].is_object() {
+                    return v;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            panic!("operation did not finish");
+        };
+        let apply = || {
+            prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0},"images":images})).unwrap()
+        };
+        select();
+        let p = apply();
+        assert!(p["confirmationToken"].is_null());
+        ipc(
+            "commit_operation",
+            json!({"operationId":p["operationId"],"confirmationToken":null}),
+        )
+        .unwrap();
+        let done = wait();
+        assert_eq!(
+            done["progress"]["items"][0]["status"], "succeeded",
+            "{done}"
+        );
+        assert!(crate::icon::fingerprint(&temp.0).unwrap().custom);
+        assert!(done["progress"].get("icon").is_none());
+        assert!(done["progress"].get("fingerprints").is_none());
+        ipc(
+            "commit_operation",
+            json!({"operationId":p["operationId"],"confirmationToken":null}),
+        )
+        .unwrap();
+        assert_eq!(op()["progress"], done["progress"]);
+        assert!(prepare(json!({"type":"restore"})).is_err());
+        select();
+        let p = apply();
+        assert!(p["confirmationToken"].is_string());
+        assert_eq!(p["overwriteTargetIds"].as_array().unwrap().len(), 1);
+        let before = crate::icon::fingerprint(&temp.0).unwrap();
+        assert!(
+            ipc(
+                "commit_operation",
+                json!({"operationId":p["operationId"],"confirmationToken":"forged"})
+            )
+            .is_err()
+        );
+        ipc("cancel_prepared", json!({"operationId":p["operationId"]})).unwrap();
+        assert_eq!(crate::icon::fingerprint(&temp.0).unwrap(), before);
+        let p = apply();
+        let other =
+            std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/32x32.png"))
+                .unwrap();
+        crate::icon::native(&temp.0, Some(&other)).unwrap();
+        let changed = crate::icon::fingerprint(&temp.0).unwrap();
+        ipc(
+            "commit_operation",
+            json!({"operationId":p["operationId"],"confirmationToken":p["confirmationToken"]}),
+        )
+        .unwrap();
+        let renewed = wait()["prepared"].clone();
+        assert!(renewed.is_object());
+        assert_ne!(renewed["confirmationToken"], p["confirmationToken"]);
+        assert_eq!(crate::icon::fingerprint(&temp.0).unwrap(), changed);
+        assert!(
+            ipc(
+                "commit_operation",
+                json!({"operationId":p["operationId"],"confirmationToken":p["confirmationToken"]})
+            )
+            .is_err()
+        );
+        ipc(
+            "cancel_prepared",
+            json!({"operationId":renewed["operationId"]}),
+        )
+        .unwrap();
+        let p = prepare(json!({"type":"restore"})).unwrap();
+        ipc(
+            "commit_operation",
+            json!({"operationId":p["operationId"],"confirmationToken":p["confirmationToken"]}),
+        )
+        .unwrap();
+        let done = wait();
+        assert_eq!(
+            done["progress"]["items"][0]["status"], "succeeded",
+            "{done}"
+        );
+        assert!(!crate::icon::fingerprint(&temp.0).unwrap().custom);
     }
     #[test]
     fn removal_preserves_order_and_becomes_manual_editing() {
@@ -911,11 +1354,24 @@ mod tests {
                         ..Default::default()
                     }],
                 );
+                s.operation = Some(completed_operation());
+                // Manual empty or failed reads preserve the completed result and targets.
+                let clears = automatic;
                 super::finish_finder(&mut s, automatic, result);
                 assert_eq!(s.items.is_empty(), automatic);
+                assert_eq!(s.operation.is_none(), clears);
                 assert!(s.error.is_some());
             }
         }
+    }
+    #[test]
+    fn automatic_clear_drops_a_completed_result() {
+        let mut s = targets();
+        s.operation = Some(completed_operation());
+        let request = s.request;
+        super::clear_automatic(&mut s, request);
+        assert!(s.items.is_empty());
+        assert!(s.operation.is_none());
     }
     #[test]
     fn stale_reads_do_not_replace_a_newer_wake_decision() {

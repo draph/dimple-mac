@@ -1,22 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Locale, type Session } from "./i18n";
-import { Preview } from "./Preview";
+import { Preview, exportImages } from "./Preview";
 import "./App.css";
 
-import type { Entry } from "./contracts";
+import type { Entry, OperationState, PreparedOperation, PrepareOperation } from "./contracts";
 export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [session, setSession] = useState<Session | null>(null);
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
   const [entry, setEntry] = useState<Entry | null>(null);
+  const [operation, setOperation] = useState<OperationState>({ revision: -1, prepared: null, progress: null });
+  const [previewReady, setPreviewReady] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submitGuard = useRef(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const refreshOperation = async () => {
+    const state = await invoke<OperationState>("get_operation");
+    setOperation(old => {
+      if (state.revision < old.revision) return old;
+      if (old.progress && state.progress?.operationId === old.progress.operationId && state.progress.sequence < old.progress.sequence) return old;
+      return state;
+    });
+  };
   const t = (key: string) => translate(locale, key);
   useEffect(() => {
     let active = true;
-    const refresh = () => invoke<Entry>("get_entry").then(value => {
+    const refresh = () => Promise.all([refreshOperation(), invoke<Entry>("get_entry").then(value => {
       if (active) setEntry(old => !old || value.revision >= old.revision ? value : old);
-    }).catch((error: unknown) => active && setFailure({ error }));
+    })]).catch((error: unknown) => active && setFailure({ error }));
     const listener = listen("entry-changed", refresh);
     listener.then(refresh).catch((error: unknown) => active && setFailure({ error }));
     invoke<Session>("get_session").then(
@@ -31,10 +44,43 @@ export default function App() {
     );
     return () => { active = false; void listener.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
-  const busy = !entry || !session || entry.choosing || entry.reading || entry.checking || entry.preparing;
+  const prepared = operation.prepared;
+  const progress = operation.progress;
+  const running = !!progress && progress.phase !== "completed";
+  useEffect(() => {
+    if (prepared?.confirmationToken && !dialog.current?.open) dialog.current?.showModal();
+    if (!prepared?.confirmationToken && dialog.current?.open) dialog.current.close();
+  }, [prepared]);
+  const busy = submitting || !!prepared || running || !entry || !session || entry.choosing || entry.reading || entry.checking || entry.preparing;
   const command = (name: string, args?: Record<string, unknown>) => {
     setFailure(null);
     void invoke(name, args).catch(error => setFailure({ error }));
+  };
+  const commit = async (p: PreparedOperation) => {
+    await invoke("commit_operation", { operationId: p.operationId, confirmationToken: p.confirmationToken });
+    await refreshOperation();
+  };
+  const start = async (restore: boolean) => {
+    if (submitGuard.current || busy || !entry || !entry.items.length || progress || (!restore && !previewReady)) return;
+    submitGuard.current = true; setSubmitting(true); setFailure(null);
+    const revision = entry.revision;
+    const targetIds = entry.items.map(item => item.id);
+    try {
+      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId: "code", params: { scale: 1, offsetX: 0, offsetY: 0 }, images: await exportImages() };
+      const p = await invoke<PreparedOperation>("prepare_operation", { request: JSON.stringify({ revision, targetIds, action }) });
+      if (p.confirmationToken) await refreshOperation();
+      else await commit(p);
+    } catch (error) { setFailure({ error }); await refreshOperation().catch(() => {}); }
+    finally { submitGuard.current = false; setSubmitting(false); }
+  };
+  const confirm = async (cancel: boolean) => {
+    if (!prepared || submitGuard.current) return;
+    submitGuard.current = true; setSubmitting(true); setFailure(null);
+    try {
+      if (cancel) { await invoke("cancel_prepared", { operationId: prepared.operationId }); await refreshOperation(); }
+      else await commit(prepared);
+    } catch (error) { setFailure({ error }); }
+    finally { submitGuard.current = false; setSubmitting(false); }
   };
   const name = (path: string) => path.substring(path.lastIndexOf("/") + 1) || path;
   return (
@@ -69,17 +115,51 @@ export default function App() {
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <h2 id="badge-heading">{t("badge.heading")}</h2>
-        <button className="badge-choice" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
+        <button disabled={busy} className="badge-choice" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
       </section>
       <section aria-labelledby="preview-heading">
         <h2 id="preview-heading">{t("preview.heading")}</h2>
-        <Preview locale={locale} />
+        <Preview locale={locale} onReady={setPreviewReady} />
       </section>
       {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
+      {progress && <section className="card" aria-live="polite" aria-atomic="true">
+        <p>{translate(locale, progress.phase === "completed" ? "operation.result" : "operation.progress", {
+          completed: progress.items.filter(item => item.status === "succeeded" || item.status === "failed").length,
+          total: progress.items.length,
+          succeeded: progress.items.filter(item => item.status === "succeeded").length,
+          failed: progress.items.filter(item => item.status === "failed").length,
+          pending: progress.items.filter(item => item.status === "pending").length,
+          unknown: progress.items.filter(item => item.status === "unknown").length,
+        })}</p>
+        {progress.phase === "checking" && <p>{t("operation.checking")}</p>}
+        {progress.slow && <p>{t("operation.slow")}</p>}
+        {progress.items.some(item => item.status === "unknown") && <p role="alert">{t("operation.uncertain")}</p>}
+        {progress.stopped && <p>{t("operation.stopped")}</p>}
+        {progress.items.filter(item => item.status === "running" || item.status === "unknown").map(item => <p className="path" key={item.targetId}>{entry?.items.find(t => t.id === item.targetId)?.path}</p>)}
+        <details><summary>{t("operation.details")}</summary><ul className="operation-results">{progress.items.map(item => <li key={item.targetId}>
+          <p className="path">{entry?.items.find(t => t.id === item.targetId)?.path}</p><p>{t(`operation.${item.status}`)}</p>
+          {item.error && <p className="error">{errorMessage(locale, item.error)}</p>}
+        </li>)}</ul></details>
+      </section>}
+      {prepared && !prepared.confirmationToken && <button disabled={submitting} onClick={() => void confirm(true)}>{t("operation.cancel")}</button>}
       <footer>
-        <p className="muted" id="apply-help">{t("apply.unavailable")}</p>
-        <button className="primary" disabled aria-describedby="apply-help">{t("apply.action")}</button>
+        <button className="quiet" disabled={busy || !entry?.items.length || !!progress} onClick={() => void start(true)}>{t("operation.restore")}</button>
+        <button className="primary" disabled={busy || !entry?.items.length || !previewReady || !!progress} onClick={() => void start(false)}>{t("apply.action")}</button>
       </footer>
+      <dialog ref={dialog} aria-labelledby="confirm-title" aria-describedby="confirm-warning" onCancel={event => { event.preventDefault(); void confirm(true); }}>
+        <h2 id="confirm-title">{t(prepared?.restore ? "operation.confirmRestore" : "operation.confirmApply")}</h2>
+        <p id="confirm-warning">{t(prepared?.restore ? "operation.restoreWarning" : "operation.overwriteWarning")}</p>
+        <p>{translate(locale, "operation.confirmCount", { total: prepared?.targetIds.length ?? 0, overwrite: prepared?.overwriteTargetIds.length ?? 0, linked: prepared?.linkedTargetIds.length ?? 0 })}</p>
+        <ul className="confirmation-targets">{prepared?.targetIds.map(id => {
+          const target = entry?.items.find(item => item.id === id);
+          return <li key={id}><p className="path">{target?.path}</p>
+            {prepared.overwriteTargetIds.includes(id) && <p>{t("operation.overwrite")}</p>}
+            {target?.linked && <p className="path">{translate(locale, "entry.actualPath", { path: target.actualPath })}</p>}
+          </li>;
+        })}</ul>
+        {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
+        <div className="target-actions"><button autoFocus disabled={submitting} onClick={() => void confirm(true)}>{t("operation.cancel")}</button><button className="primary" disabled={submitting} onClick={() => void confirm(false)}>{t("operation.confirm")}</button></div>
+      </dialog>
     </main>
   );
 }

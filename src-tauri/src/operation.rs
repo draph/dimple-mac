@@ -9,7 +9,7 @@ const SIZES: [u32; 7] = [16, 32, 64, 128, 256, 512, 1024];
 fn invalid(reason: &str) -> AppError {
     AppError::reason("invalid_input", reason)
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Request {
     pub revision: u64,
@@ -17,7 +17,7 @@ pub struct Request {
 
     pub action: Action,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
     Apply {
@@ -30,14 +30,14 @@ pub enum Action {
     },
     Restore {},
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
     scale: f64,
     offset_x: f64,
     offset_y: f64,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Image {
     size: u32,
@@ -157,28 +157,131 @@ pub fn validate(input: &Request) -> Result<Vec<Vec<u8>>, AppError> {
     }
     Ok(output)
 }
+#[derive(Clone)]
 pub struct Prepared {
     pub id: String,
-    _request: Request,
-    targets: Vec<Target>,
-    _images: Vec<Vec<u8>>,
+    pub request: Request,
+    pub targets: Vec<Target>,
+    pub icon: Option<Vec<u8>>,
+    pub fingerprints: Vec<crate::icon::Fingerprint>,
+    pub token: String,
+    pub force_confirmation: bool,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
-    operation_id: String,
+    pub operation_id: String,
     target_ids: Vec<String>,
     linked_target_ids: Vec<String>,
+    overwrite_target_ids: Vec<String>,
+    restore: bool,
+    confirmation_token: Option<String>,
     commit_available: bool,
 }
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemResult {
+    pub target_id: String,
+    pub status: String,
+    pub error: Option<AppError>,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub operation_id: String,
+    pub sequence: u64,
+    pub phase: String,
+    pub items: Vec<ItemResult>,
+    pub slow: bool,
+    pub stopped: bool,
+}
+impl Progress {
+    pub fn new(p: &Prepared) -> Self {
+        Self {
+            operation_id: p.id.clone(),
+            sequence: 0,
+            phase: "checking".into(),
+            items: p
+                .targets
+                .iter()
+                .map(|t| ItemResult {
+                    target_id: t.id.clone(),
+                    status: "pending".into(),
+                    error: None,
+                })
+                .collect(),
+            slow: false,
+            stopped: false,
+        }
+    }
+    pub fn busy(&self) -> bool {
+        // An uncertain result may still have written and keeps edits blocked until restart.
+        self.phase != "completed"
+    }
+}
 impl Prepared {
-    pub fn new(request: Request, targets: Vec<Target>, images: Vec<Vec<u8>>) -> Self {
+    pub fn new(request: Request, targets: Vec<Target>) -> Self {
         Self {
             id: targets::next_id("operation"),
-            _request: request,
+            request,
             targets,
-            _images: images,
+            icon: None,
+            fingerprints: vec![],
+            token: targets::next_id("confirmation"),
+            force_confirmation: false,
         }
+    }
+    pub fn build(
+        request: Request,
+        targets: Vec<Target>,
+        images: Vec<Vec<u8>>,
+    ) -> Result<Self, AppError> {
+        let mut p = Self::new(request, targets);
+        if let Action::Apply {
+            images: supplied, ..
+        } = &p.request.action
+        {
+            let mut bytes = Vec::from(&b"icns\0\0\0\0"[..]);
+            for (kind, size) in [
+                ("icp4", 16),
+                ("icp5", 32),
+                ("icp6", 64),
+                ("ic07", 128),
+                ("ic08", 256),
+                ("ic09", 512),
+                ("ic10", 1024),
+                ("ic11", 32),
+                ("ic12", 64),
+                ("ic13", 256),
+                ("ic14", 512),
+            ] {
+                let index = supplied
+                    .iter()
+                    .position(|i| i.size == size)
+                    .ok_or_else(|| invalid("images"))?;
+                let png = images.get(index).ok_or_else(|| invalid("images"))?;
+                bytes.extend(kind.as_bytes());
+                bytes.extend(((png.len() + 8) as u32).to_be_bytes());
+                bytes.extend(png);
+            }
+            let len = bytes.len() as u32;
+            bytes[4..8].copy_from_slice(&len.to_be_bytes());
+            p.icon = Some(bytes);
+        }
+        p.refresh()?;
+        Ok(p)
+    }
+    pub fn refresh(&mut self) -> Result<(), AppError> {
+        self.fingerprints =
+            targets::check(targets::Request::Fingerprint(self.targets.clone()))?.fingerprints;
+        self.token = targets::next_id("confirmation");
+        Ok(())
+    }
+    pub fn needs_confirmation(&self) -> bool {
+        self.force_confirmation
+            || matches!(self.request.action, Action::Restore {})
+            || self.targets.iter().any(|t| t.linked)
+            || self.fingerprints.iter().any(|f| f.has_icon())
     }
     pub fn summary(&self) -> Summary {
         Summary {
@@ -190,8 +293,24 @@ impl Prepared {
                 .filter(|t| t.linked)
                 .map(|t| t.id.clone())
                 .collect(),
-            commit_available: false,
+            overwrite_target_ids: self
+                .targets
+                .iter()
+                .zip(&self.fingerprints)
+                .filter(|(_, f)| f.has_icon())
+                .map(|(t, _)| t.id.clone())
+                .collect(),
+            restore: matches!(self.request.action, Action::Restore {}),
+            confirmation_token: self.needs_confirmation().then(|| self.token.clone()),
+            commit_available: true,
         }
+    }
+    pub fn refreshed(&self) -> Result<Self, AppError> {
+        let mut p = self.clone();
+        p.fingerprints.clear();
+        p.token.clear();
+        p.refresh()?;
+        Ok(p)
     }
 }
 #[cfg(test)]

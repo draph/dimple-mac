@@ -37,6 +37,11 @@ export function errorMessage(locale: Locale, error: unknown): string {
     if (error.code === "entry_error" && reason === "budget") return translate(locale, "error.budget");
     const entryReasons = ["busy", "limit", "invalid", "finderInactive", "finderFailed", "finderDenied", "finderTimeout", "shortcutFailed", "checkFailed", "changed", "badgeUnavailable", "mixed", "empty"];
     if (error.code === "entry_error" && typeof reason === "string" && entryReasons.includes(reason)) return translate(locale, `entry.${reason}`);
+    if (error.code === "operation_error" && typeof reason === "string") {
+      if (["fingerprint", "write", "image", "coordination", "confirmation", "uncertain", "edit"].includes(reason)) return translate(locale, `operation.error.${reason}`);
+      if (reason === "busy") return translate(locale, "entry.busy");
+      if (reason === "operation") return translate(locale, "error.operation");
+    }
     if (["invalid_input", "permission_denied", "target_changed", "busy", "timeout"].includes(String(error.code)) && typeof reason === "string") {
       if (["changed"].includes(reason)) return translate(locale, "entry.changed");
       if (reason === "busy") return translate(locale, "entry.busy");

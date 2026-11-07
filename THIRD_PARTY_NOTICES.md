@@ -16,10 +16,11 @@ project's accepted basis and limitation, rather than asserting an independently
 verified Apple authorization. No Apple logos, alias badges, or locked badges
 are selected for inclusion.
 
-The application bundles the 1024-pixel template (`icon_512x512@2x.png`) for
-its preview. This notice, including the upstream license text below, accompanies
-the distributed application. Dependency notices remain to be completed in T22;
-this file is not a complete dependency inventory.
+The application bundles all ten PNGs from the selected iconset (16–1024 pixels,
+including Retina variants) for preview and icon generation. This notice,
+including the upstream license text below, accompanies the distributed
+application. Dependency notices remain to be completed in T22; this file is not
+a complete dependency inventory.
 
 The pinned upstream license contains the following text, without a separate
 copyright line:

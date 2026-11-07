@@ -47,3 +47,8 @@ summary { font-size: 12px; color: var(--accent); padding: 3px 0; }
   .primary { color: #152c43; }
   .error { color: #ffabb0; }
 }
+dialog { margin: auto; max-width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; border: 1px solid var(--border); border-radius: 16px; padding: 20px; color: inherit; background: var(--surface); backdrop-filter: blur(24px); font-size: 13px; }
+dialog::backdrop { background: #10182888; }
+dialog p { margin-bottom: 8px; }
+.confirmation-targets, .operation-results { padding-left: 18px; max-height: 180px; overflow: auto; }
+.confirmation-targets li, .operation-results li { margin: 8px 0; }
