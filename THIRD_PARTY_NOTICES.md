@@ -16,8 +16,8 @@ project's accepted basis and limitation, rather than asserting an independently
 verified Apple authorization. No Apple logos, alias badges, or locked badges
 are selected for inclusion.
 
-The current engineering prototype does not import or bundle this template.
-When it is integrated, this notice and the license text below must accompany
+The application bundles the 1024-pixel template (`icon_512x512@2x.png`) for
+its preview. This notice, including the upstream license text below, accompanies
 the distributed application. Dependency notices remain to be completed in T22;
 this file is not a complete dependency inventory.
 

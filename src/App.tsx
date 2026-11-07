@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Locale, type Session } from "./i18n";
+import { Preview } from "./Preview";
 import "./App.css";
 
 type Entry = { revision: number; source: string; items: { path: string; kind: string }[]; error: string | null; choosing: boolean; reading: boolean; checking: boolean };
@@ -30,32 +31,54 @@ export default function App() {
     );
     return () => { active = false; void listener.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
+  const busy = !entry || !session || entry.choosing || entry.reading || entry.checking;
+  const command = (name: string, args?: Record<string, unknown>) => {
+    setFailure(null);
+    void invoke(name, args).catch(error => setFailure({ error }));
+  };
+  const name = (path: string) => path.substring(path.lastIndexOf("/") + 1) || path;
   return (
-    <main className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-8 py-10">
-      <header>
-        <p className="eyebrow">{t("app.brand")}</p>
-        <h1>{t("app.heading")}</h1>
-        <p className="muted">{t("app.description")}</p>
+    <main className="panel">
+      <header className="panel-header">
+        <h1>{t("app.name")}</h1>
+        <button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button>
       </header>
-      <section className="empty" aria-labelledby="target-heading">
+      <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking}>
         <h2 id="target-heading">{t("entry.heading")}</h2>
-        <div className="flex flex-wrap gap-3">
-          <button disabled={entry?.choosing || entry?.reading || entry?.checking} onClick={() => { void invoke("choose_targets").catch(error => setFailure({ error })); }}>{t("entry.choose")}</button>
-          <button disabled={entry?.choosing || entry?.reading || entry?.checking} onClick={() => { void invoke("finder_selection").catch(error => setFailure({ error })); }}>{t("entry.finder")}</button>
-        </div>
-        {entry?.reading && <p role="status">{t("entry.reading")}</p>}
-        {entry?.error && <p role="alert">{t(`entry.${entry.error}`)}</p>}
         {entry?.items.length ? <>
-          <p>{t(`entry.${entry.source}`)} · {new Intl.NumberFormat(locale).format(entry.items.length)}</p>
-          <ul>{entry.items.map(item => <li key={item.path}>
-            <details><summary>{item.path.substring(item.path.lastIndexOf("/") + 1)} · {t(`entry.${item.kind}`)}</summary><p className="break-all">{item.path}</p></details>
-          </li>)}</ul>
-        </> : <p>{t("entry.empty")}</p>}
+          <p className="target-summary" title={entry.items.length === 1 ? entry.items[0].path : undefined}>
+            {entry.items.length === 1 ? name(entry.items[0].path) : translate(locale, "entry.count", { count: entry.items.length })}
+          </p>
+          <details>
+            <summary>{t("entry.details")}</summary>
+            <ul className="target-list">{entry.items.map((item, index) => <li key={`${index}:${item.path}`}>
+              <div><strong>{name(item.path)}</strong><p className="path">{item.path}</p></div>
+              <button className="quiet" disabled={busy} aria-label={translate(locale, "entry.removeName", { name: name(item.path) })}
+                onClick={() => command("remove_target", { expectedRevision: entry.revision, index })}>{t("entry.remove")}</button>
+            </li>)}</ul>
+          </details>
+        </> : <p className="empty">{t("entry.empty")}</p>}
+        <div className="target-actions">
+          <button disabled={busy} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
+          <button className="quiet" disabled={busy} onClick={() => command("finder_selection")}>{t("entry.finder")}</button>
+        </div>
+        {entry?.reading && <p role="status" className="muted">{t("entry.reading")}</p>}
+        {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
+        {entry?.error && <p role="alert" className="error">{t(`entry.${entry.error}`)}</p>}
       </section>
-      <p role="status" className="muted text-sm">{failure ? errorMessage(locale, failure.error) : session
-        ? translate(locale, "connection.connected", { version: session.version })
-        : t("connection.connecting")}</p>
-      <button className="self-end text-sm" onClick={() => { void invoke("quit_app").catch(error => setFailure({ error })); }}>{t("menu.quit")}</button>
+      <section className="badge-section" aria-labelledby="badge-heading">
+        <h2 id="badge-heading">{t("badge.heading")}</h2>
+        <button className="badge-choice" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
+      </section>
+      <section aria-labelledby="preview-heading">
+        <h2 id="preview-heading">{t("preview.heading")}</h2>
+        <Preview locale={locale} />
+      </section>
+      {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
+      <footer>
+        <p className="muted" id="apply-help">{t("apply.unavailable")}</p>
+        <button className="primary" disabled aria-describedby="apply-help">{t("apply.action")}</button>
+      </footer>
     </main>
   );
 }

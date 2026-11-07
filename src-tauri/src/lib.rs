@@ -103,7 +103,8 @@ pub fn run() {
             quit_app,
             entry::get_entry,
             entry::choose_targets,
-            entry::finder_selection
+            entry::finder_selection,
+            entry::remove_target
         ])
         .build(tauri::generate_context!())
         .expect("Failed to start Folderify Desktop")

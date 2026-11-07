@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 > Under development. This is a draft of the first-release user guide; it describes the intended product, not the current implementation status. No public installer is available yet. Download details, supported systems, and signing status will be finalized against the release build before publication.
 
+The current development build supports folder selection, target details and removal, and a built-in code-bracket preview. Applying icons, restoring defaults, and importing badges are not available yet.
+
 A macOS menu bar app for giving folders custom icons with a native recessed look. Select folders, choose a badge, and apply—all in one panel.
 
 Folderify Desktop is an independently maintained GUI project inspired by [lgarron/folderify](https://github.com/lgarron/folderify), not its official desktop app. It uses Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.

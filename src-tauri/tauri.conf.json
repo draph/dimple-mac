@@ -46,7 +46,9 @@
     "resources": {
       "resources/en.lproj/": "en.lproj/",
       "resources/zh-Hans.lproj/": "zh-Hans.lproj/",
-      "icons/Assets.car": "Assets.car"
+      "icons/Assets.car": "Assets.car",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../LICENSE": "LICENSE"
     }
   }
 }

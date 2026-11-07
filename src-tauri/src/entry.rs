@@ -165,6 +165,10 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
         s.error = Some("invalid".into());
         return;
     }
+    if items.iter().any(|i| i.kind != "directory") {
+        s.error = Some("badgeUnavailable".into());
+        return;
+    }
     s.source = source.into();
     s.items = items;
     s.error = None;
@@ -207,6 +211,28 @@ pub fn wake(app: &tauri::AppHandle) {
 #[tauri::command]
 pub fn get_entry(app: tauri::AppHandle) -> Snapshot {
     app.state::<Inbox>().0.lock().unwrap().clone()
+}
+#[tauri::command]
+pub fn remove_target(app: tauri::AppHandle, expected_revision: u64, index: usize) {
+    let inbox = app.state::<Inbox>();
+    let mut state = inbox.0.lock().unwrap();
+    remove(&mut state, expected_revision, index);
+    commit_update(&app, state);
+}
+fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
+    if s.revision != expected_revision || index >= s.items.len() {
+        s.error = Some("changed".into());
+        return;
+    }
+    if s.choosing || s.checking || s.active_read.is_some() {
+        s.error = Some("busy".into());
+        return;
+    }
+    s.request += 1;
+    invalidate_read(s);
+    s.items.remove(index);
+    s.source = if s.items.is_empty() { "" } else { "manual" }.into();
+    s.error = None;
 }
 #[tauri::command]
 pub fn choose_targets(app: tauri::AppHandle) {
@@ -366,6 +392,94 @@ fn finder_paths() -> Result<Vec<PathBuf>, &'static str> {
 
 #[cfg(test)]
 mod tests {
+    fn targets() -> super::Snapshot {
+        super::Snapshot {
+            revision: 7,
+            source: "finder-auto".into(),
+            items: ["first", "middle", "last"]
+                .into_iter()
+                .map(|name| super::InputItem {
+                    path: format!("/tmp/{name}").into(),
+                    kind: "directory",
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn removal_preserves_order_and_becomes_manual_editing() {
+        for index in 0..3 {
+            let mut s = targets();
+            let expected: Vec<_> = s
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != index)
+                .map(|(_, item)| item.path.clone())
+                .collect();
+            super::remove(&mut s, 7, index);
+            assert_eq!(
+                s.items.iter().map(|i| i.path.clone()).collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(s.source, "manual");
+            assert_eq!(super::plan_wake(&mut s, true), (false, false));
+            super::remove(&mut s, 7, 0);
+            super::remove(&mut s, 7, 0);
+            assert!(s.items.is_empty());
+            assert!(s.source.is_empty());
+        }
+    }
+    #[test]
+    fn stale_invalid_and_busy_removals_preserve_targets() {
+        for case in 0..5 {
+            let mut s = targets();
+            s.choosing = case == 2;
+            s.checking = case == 3;
+            s.active_read = (case == 4).then_some(1);
+            let revision = if case == 0 { 6 } else { 7 };
+            let index = if case == 1 { usize::MAX } else { 0 };
+            super::remove(&mut s, revision, index);
+            assert_eq!(s.items.len(), 3);
+            assert_eq!(s.source, "finder-auto");
+            assert_eq!(
+                s.error.as_deref(),
+                Some(if case < 2 { "changed" } else { "busy" })
+            );
+        }
+    }
+    #[test]
+    fn removed_targets_cannot_be_restored_by_a_superseded_read() {
+        let mut s = targets();
+        super::remove(&mut s, 7, 0);
+        super::complete_read(&mut s, 1, 0, true, Ok(targets().items));
+        assert_eq!(s.items.len(), 2);
+        assert_eq!(s.source, "manual");
+    }
+    #[test]
+    fn badge_input_keeps_the_current_targets() {
+        let mut s = targets();
+        super::accept(
+            &mut s,
+            "window-drop",
+            vec![super::InputItem {
+                path: "/tmp/input.svg".into(),
+                kind: "badge",
+            }],
+        );
+        assert_eq!(s.error.as_deref(), Some("badgeUnavailable"));
+        assert_eq!(s.items.len(), 3);
+        assert_eq!(s.source, "finder-auto");
+        super::finish_finder(
+            &mut s,
+            false,
+            Ok(vec![super::InputItem {
+                path: "/tmp/input.png".into(),
+                kind: "badge",
+            }]),
+        );
+        assert_eq!(s.items.len(), 3);
+    }
     #[test]
     fn invalid_and_busy_inputs_preserve_valid_editing() {
         let mut s = super::Snapshot::default();
