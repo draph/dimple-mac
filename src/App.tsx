@@ -1,51 +1,51 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { errorMessage, translate, type Locale, type Session } from "./i18n";
+import { errorMessage, translate, type Session } from "./i18n";
 import { Preview, exportImages } from "./Preview";
 import "./App.css";
 
-import type { Entry, OperationState, PreparedOperation, PrepareOperation } from "./contracts";
+import { acceptSession, sameContext, sameDraft } from "./session";
+import type { PreparedOperation, PrepareOperation } from "./contracts";
 export default function App() {
-  const [locale, setLocale] = useState<Locale>("en");
   const [session, setSession] = useState<Session | null>(null);
+  const current = useRef<Session | null>(null);
+  const epoch = useRef(0);
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
-  const [entry, setEntry] = useState<Entry | null>(null);
-  const [operation, setOperation] = useState<OperationState>({ revision: -1, prepared: null, progress: null });
   const [previewReady, setPreviewReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submitGuard = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const refreshOperation = async () => {
-    const state = await invoke<OperationState>("get_operation");
-    setOperation(old => {
-      if (state.revision < old.revision) return old;
-      if (old.progress && state.progress?.operationId === old.progress.operationId && state.progress.sequence < old.progress.sequence) return old;
-      return state;
-    });
-  };
+  const refreshSession = useCallback(async (generation = epoch.current) => {
+    const value = await invoke<Session>("get_session");
+    if (generation !== epoch.current) return null;
+    const next = acceptSession(current.current, value);
+    if (!sameContext(current.current, next)) setFailure(null);
+    current.current = next;
+    document.documentElement.lang = current.current.locale;
+    setSession(current.current);
+    return current.current;
+  }, []);
+  const locale = session?.locale ?? "en";
+  const entry = session?.entry;
+  const operation = session?.operation;
   const t = (key: string) => translate(locale, key);
   useEffect(() => {
-    let active = true;
-    const refresh = () => Promise.all([refreshOperation(), invoke<Entry>("get_entry").then(value => {
-      if (active) setEntry(old => !old || value.revision >= old.revision ? value : old);
-    })]).catch((error: unknown) => active && setFailure({ error }));
+    const generation = ++epoch.current;
+    const refresh = () => {
+      const before = current.current;
+      return refreshSession(generation).catch((error: unknown) => {
+        if (generation === epoch.current && current.current === before) setFailure({ error });
+      });
+    };
     const listener = listen("entry-changed", refresh);
-    listener.then(refresh).catch((error: unknown) => active && setFailure({ error }));
-    invoke<Session>("get_session").then(
-      (value) => {
-        if (active) {
-          document.documentElement.lang = value.locale;
-          setLocale(value.locale);
-          setSession(value);
-        }
-      },
-      (error: unknown) => active && setFailure({ error }),
-    );
-    return () => { active = false; void listener.then(unlisten => unlisten()).catch(() => {}); };
-  }, []);
-  const prepared = operation.prepared;
-  const progress = operation.progress;
+    void listener.then(refresh).catch((error: unknown) => {
+      if (generation === epoch.current) setFailure({ error });
+    });
+    return () => { ++epoch.current; void listener.then(unlisten => unlisten()).catch(() => {}); };
+  }, [refreshSession]);
+  const prepared = operation?.prepared;
+  const progress = operation?.progress;
   const running = !!progress && progress.phase !== "completed";
   useEffect(() => {
     if (prepared?.confirmationToken && !dialog.current?.open) dialog.current?.showModal();
@@ -53,40 +53,56 @@ export default function App() {
   }, [prepared]);
   const busy = submitting || !!prepared || running || !entry || !session || entry.choosing || entry.reading || entry.checking || entry.preparing;
   const command = (name: string, args?: Record<string, unknown>) => {
+    const generation = epoch.current;
+    const before = current.current;
     setFailure(null);
-    void invoke(name, args).catch(error => setFailure({ error }));
+    void invoke(name, args).then(() => refreshSession(generation)).catch(error => {
+      if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error });
+    });
   };
-  const commit = async (p: PreparedOperation) => {
+  const commit = async (p: PreparedOperation, generation: number) => {
+    if (generation !== epoch.current) return;
     await invoke("commit_operation", { operationId: p.operationId, confirmationToken: p.confirmationToken });
-    await refreshOperation();
+    await refreshSession(generation);
   };
   const start = async (restore: boolean) => {
-    if (submitGuard.current || busy || !entry || !entry.items.length || progress || (!restore && !previewReady)) return;
+    if (submitGuard.current || busy || !entry?.items.length || progress || (!restore && !previewReady) || !session) return;
     submitGuard.current = true; setSubmitting(true); setFailure(null);
-    const revision = entry.revision;
+    const generation = epoch.current;
+    const draft = session;
     const targetIds = entry.items.map(item => item.id);
     try {
       const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId: "code", params: { scale: 1, offsetX: 0, offsetY: 0 }, images: await exportImages() };
-      const p = await invoke<PreparedOperation>("prepare_operation", { request: JSON.stringify({ revision, targetIds, action }) });
-      if (p.confirmationToken) await refreshOperation();
-      else await commit(p);
-    } catch (error) { setFailure({ error }); await refreshOperation().catch(() => {}); }
-    finally { submitGuard.current = false; setSubmitting(false); }
+      const latest = await refreshSession(generation);
+      if (!sameDraft(draft, latest)) return;
+      const p = await invoke<PreparedOperation>("prepare_operation", { request: JSON.stringify({ revision: latest!.entry.revision, targetIds, action }) });
+      if (generation !== epoch.current) return;
+      if (p.confirmationToken) await refreshSession(generation);
+      else await commit(p, generation);
+    } catch (error) {
+      if (generation === epoch.current && sameContext(draft, current.current)) setFailure({ error });
+      await refreshSession(generation).catch(() => {});
+    } finally {
+      if (generation === epoch.current) { submitGuard.current = false; setSubmitting(false); }
+    }
   };
   const confirm = async (cancel: boolean) => {
     if (!prepared || submitGuard.current) return;
+    const generation = epoch.current;
+    const before = current.current;
     submitGuard.current = true; setSubmitting(true); setFailure(null);
     try {
-      if (cancel) { await invoke("cancel_prepared", { operationId: prepared.operationId }); await refreshOperation(); }
-      else await commit(prepared);
-    } catch (error) { setFailure({ error }); }
-    finally { submitGuard.current = false; setSubmitting(false); }
+      if (cancel) { await invoke("cancel_prepared", { operationId: prepared.operationId }); await refreshSession(generation); }
+      else await commit(prepared, generation);
+    } catch (error) { if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error }); }
+    finally { if (generation === epoch.current) { submitGuard.current = false; setSubmitting(false); } }
   };
   const name = (path: string) => path.substring(path.lastIndexOf("/") + 1) || path;
   return (
     <main className="panel">
       <header className="panel-header">
         <h1>{t("app.name")}</h1>
+        <button className="quiet" disabled={!session} aria-pressed={entry?.pinned ?? false} onClick={() => command("set_pinned", { pinned: !entry?.pinned })}>{t("window.pin")}</button>
         <button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button>
       </header>
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
@@ -115,7 +131,7 @@ export default function App() {
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <h2 id="badge-heading">{t("badge.heading")}</h2>
-        <button disabled={busy} className="badge-choice" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
+        <button disabled={busy} onClick={() => progress && command("begin_edit", { expectedEditRevision: entry!.editRevision, operationId: progress.operationId })} className="badge-choice" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
       </section>
       <section aria-labelledby="preview-heading">
         <h2 id="preview-heading">{t("preview.heading")}</h2>

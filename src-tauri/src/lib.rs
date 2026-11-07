@@ -16,9 +16,32 @@ struct Session {
     locale: Locale,
 }
 
+#[derive(serde::Serialize)]
+struct SessionSnapshot {
+    #[serde(flatten)]
+    info: Session,
+    entry: entry::Snapshot,
+    operation: entry::OperationState,
+}
+
+fn session_snapshot<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    info: Session,
+) -> SessionSnapshot {
+    let (entry, operation) = entry::session(app);
+    SessionSnapshot {
+        info,
+        entry,
+        operation,
+    }
+}
+
 #[tauri::command]
-fn get_session(session: tauri::State<'_, Session>) -> Session {
-    session.inner().clone()
+fn get_session<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    session: tauri::State<'_, Session>,
+) -> SessionSnapshot {
+    session_snapshot(&app, session.inner().clone())
 }
 
 #[tauri::command]
@@ -112,6 +135,8 @@ pub fn run() {
             get_session,
             quit_app,
             entry::get_entry,
+            entry::begin_edit,
+            entry::set_pinned,
             entry::choose_targets,
             entry::finder_selection,
             entry::remove_target,

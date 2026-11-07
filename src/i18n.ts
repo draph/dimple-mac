@@ -7,7 +7,7 @@ export type AppError = {
   params: Record<string, unknown>;
   targetId?: string;
 };
-export type Session = { version: string; locale: Locale };
+export type Session = { version: string; locale: Locale; entry: import("./contracts").Entry; operation: import("./contracts").OperationState };
 
 const resources: Record<Locale, Record<string, string>> = { en, "zh-Hans": zh };
 

@@ -9,6 +9,10 @@ use tauri::{Emitter, Manager};
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     revision: u64,
+    edit_revision: u64,
+    pinned: bool,
+    #[serde(skip)]
+    cleanup: Option<(String, u64)>,
     #[serde(skip)]
     request: u64,
     source: String,
@@ -61,8 +65,96 @@ fn commit_update<R: tauri::Runtime>(
     mut state: MutexGuard<'_, Snapshot>,
 ) {
     state.revision += 1;
+    let cleanup = if state.cleanup.is_none() && all_succeeded(&state) {
+        let token = (
+            state.operation.as_ref().unwrap().operation_id.clone(),
+            state.edit_revision,
+        );
+        state.cleanup = Some(token.clone());
+        Some(token)
+    } else {
+        None
+    };
     drop(state);
     let _ = app.emit("entry-changed", ());
+    if let Some(token) = cleanup {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            loop {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let on_main = app.clone();
+                let token = token.clone();
+                if app
+                    .run_on_main_thread(move || {
+                        let _ = tx.send(finish_success(&on_main, &token));
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+                if rx.recv() != Ok(true) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+    }
+}
+fn finish_success<R: tauri::Runtime>(app: &tauri::AppHandle<R>, token: &(String, u64)) -> bool {
+    let inbox = app.state::<Inbox>();
+    let mut s = inbox.0.lock().unwrap();
+    if s.cleanup.as_ref() != Some(token) {
+        return false;
+    }
+    if candidate_pending(&s) {
+        return true;
+    }
+    if release_success(&mut s, token) {
+        // This runs on the main thread, so hide completes before a later input can show.
+        if !s.pinned
+            && let Some(w) = app.get_webview_window("main")
+        {
+            let _ = w.hide();
+        }
+        commit_update(app, s);
+    }
+    false
+}
+fn candidate_pending(s: &Snapshot) -> bool {
+    s.choosing || s.checking || s.active_read.is_some() || s.preparing
+}
+fn all_succeeded(s: &Snapshot) -> bool {
+    s.operation.as_ref().is_some_and(|p| {
+        p.phase == "completed"
+            && !p.items.is_empty()
+            && p.items.iter().all(|i| i.status == "succeeded")
+    })
+}
+fn edited(s: &mut Snapshot) {
+    s.edit_revision += 1;
+    s.cleanup = None;
+    s.prepared = None;
+    s.operation = None;
+}
+fn release_success(s: &mut Snapshot, token: &(String, u64)) -> bool {
+    if s.cleanup.as_ref() != Some(token)
+        || s.edit_revision != token.1
+        || !all_succeeded(s)
+        || candidate_pending(s)
+        || s.operation
+            .as_ref()
+            .is_none_or(|p| p.operation_id != token.0)
+    {
+        return false;
+    }
+    s.items.clear();
+    s.source.clear();
+    s.issues.clear();
+    s.error = None;
+    s.request += 1;
+    edited(s);
+    true
 }
 fn update<R: tauri::Runtime>(app: &tauri::AppHandle<R>, f: impl FnOnce(&mut Snapshot)) {
     let state = app.state::<Inbox>();
@@ -74,17 +166,26 @@ pub fn error<R: tauri::Runtime>(app: &tauri::AppHandle<R>, code: &str) {
     update(app, |s| s.error = Some(code.into()));
 }
 pub fn receive<R: tauri::Runtime>(app: &tauri::AppHandle<R>, source: &str, paths: Vec<PathBuf>) {
-    show(app);
+    receive_paths(app, source, paths, false);
+}
+fn receive_paths<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    source: &str,
+    paths: Vec<PathBuf>,
+    from_picker: bool,
+) {
     let app = app.clone();
     let source = source.to_owned();
     let revision = {
         let state = app.state::<Inbox>();
         let mut s = state.0.lock().unwrap();
-        if s.operation_locked() || s.choosing || s.checking || s.preparing {
+        show(&app);
+        if s.operation_locked() || (s.choosing && !from_picker) || s.checking || s.preparing {
             drop(s);
             error(&app, "busy");
             return;
         }
+        s.choosing = false;
         invalidate_read(&mut s);
         s.checking = true;
         s.request += 1;
@@ -93,30 +194,46 @@ pub fn receive<R: tauri::Runtime>(app: &tauri::AppHandle<R>, source: &str, paths
         revision
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let checked = check_paths(paths);
-        update(&app, |s| {
-            s.checking = false;
-            if s.request != revision {
-                return;
-            }
-            match checked {
-                Ok(items) => accept(s, &source, items),
-                Err(code) => s.error = Some(code.into()),
-            }
+        let checked = check_paths_current(paths, || {
+            app.state::<Inbox>().0.lock().unwrap().request == revision
         });
+        update(&app, |s| finish_input(s, revision, &source, checked));
     });
 }
+fn finish_input(
+    s: &mut Snapshot,
+    request: u64,
+    source: &str,
+    checked: Result<Vec<InputItem>, &'static str>,
+) {
+    if s.request != request {
+        return;
+    }
+    s.checking = false;
+    match checked {
+        Ok(items) => accept(s, source, items),
+        Err(code) => s.error = Some(code.into()),
+    }
+}
+
+#[cfg(test)]
 fn check_paths(paths: Vec<PathBuf>) -> Result<Vec<InputItem>, &'static str> {
-    let checked = targets::check(targets::Request::Inspect(paths)).map_err(|e| {
-        match e.params.get("reason").and_then(|v| v.as_str()) {
+    check_paths_current(paths, || true)
+}
+fn check_paths_current(
+    paths: Vec<PathBuf>,
+    current: impl Fn() -> bool,
+) -> Result<Vec<InputItem>, &'static str> {
+    let checked = targets::check_cancellable(targets::Request::Inspect(paths), current).map_err(
+        |e| match e.params.get("reason").and_then(|v| v.as_str()) {
             Some("limit") => "limit",
             Some("mixed") => "mixed",
             Some("badge_unavailable") => "badgeUnavailable",
             Some("empty") => "empty",
             Some("budget") => "budget",
             _ => "checkFailed",
-        }
-    })?;
+        },
+    )?;
     let mut items: Vec<_> = checked
         .items
         .into_iter()
@@ -173,8 +290,7 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
         item.id = targets::next_id("target");
     }
     s.items = valid;
-    s.prepared = None;
-    s.operation = None;
+    edited(s);
     s.source = source.into();
     s.error = None;
 }
@@ -244,8 +360,7 @@ fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
     s.request += 1;
     invalidate_read(s);
     s.items.remove(index);
-    s.prepared = None;
-    s.operation = None;
+    edited(s);
     s.issues.clear();
     s.source = if s.items.is_empty() { "" } else { "manual" }.into();
     s.error = None;
@@ -268,13 +383,14 @@ pub fn choose_targets<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
         commit_update(&app, s);
     }
     app.dialog().file().pick_folders(move |files| {
-        update(&app, |s| s.choosing = false);
         if let Some(files) = files {
             let paths = files
                 .into_iter()
                 .filter_map(|f| f.into_path().ok())
                 .collect();
-            receive(&app, "picker", paths);
+            receive_paths(&app, "picker", paths, true);
+        } else {
+            update(&app, |s| s.choosing = false);
         }
     });
 }
@@ -311,8 +427,10 @@ fn read_finder<R: tauri::Runtime>(
         if !read_is_current(&app, generation) {
             return;
         }
-        let result = match finder_paths() {
-            Ok(paths) if read_is_current(&app, generation) => check_paths(paths),
+        let result = match finder_paths(|| read_is_current(&app, generation)) {
+            Ok(paths) if read_is_current(&app, generation) => {
+                check_paths_current(paths, || read_is_current(&app, generation))
+            }
             Ok(_) => return,
             Err(error) => Err(error),
         };
@@ -332,6 +450,7 @@ fn read_is_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, generation: u64
 }
 fn clear_automatic(s: &mut Snapshot, expected_request: u64) {
     if s.operation_locked()
+        || s.operation.is_some()
         || s.request != expected_request
         || s.preparing
         || s.choosing
@@ -343,15 +462,17 @@ fn clear_automatic(s: &mut Snapshot, expected_request: u64) {
     }
     s.request += 1;
     s.items.clear();
-    s.prepared = None;
-    s.operation = None;
+    edited(s);
     s.issues.clear();
     s.source.clear();
     s.error = Some("finderInactive".into());
 }
 fn plan_wake(s: &mut Snapshot, hidden: bool) -> (bool, bool) {
     let automatic = !s.operation_locked()
+        && s.operation.is_none()
         && !s.preparing
+        && !s.choosing
+        && !s.checking
         && hidden
         && (s.items.is_empty() || s.source == "finder-auto");
     // A new activation decides again; any read already in flight must not answer it.
@@ -383,10 +504,9 @@ fn complete_read(
     finish_finder(s, automatic, result);
 }
 fn finish_finder(s: &mut Snapshot, automatic: bool, result: Result<Vec<InputItem>, &'static str>) {
-    if automatic && !matches!(&result, Err("limit" | "mixed" | "budget")) {
+    if automatic && s.operation.is_none() && !matches!(&result, Err("limit" | "mixed" | "budget")) {
         s.items.clear();
-        s.prepared = None;
-        s.operation = None;
+        edited(s);
         s.issues.clear();
         s.source.clear();
     }
@@ -395,22 +515,34 @@ fn finish_finder(s: &mut Snapshot, automatic: bool, result: Result<Vec<InputItem
         Err(code) => s.error = Some(code.into()),
     }
 }
-fn finder_paths() -> Result<Vec<PathBuf>, &'static str> {
+fn finder_paths(current: impl Fn() -> bool) -> Result<Vec<PathBuf>, &'static str> {
+    let script = r#"try { var f = Application('com.apple.finder'); JSON.stringify({paths: f.selection().map(x => ObjC.unwrap($.NSURL.URLWithString(x.url()).path))}); } catch(e) { JSON.stringify({denied: e.errorNumber === -1743}); }"#;
+    let mut command = std::process::Command::new("/usr/bin/osascript");
+    command.args([
+        "-l",
+        "JavaScript",
+        "-e",
+        "ObjC.import('Foundation');",
+        "-e",
+        script,
+    ]);
+    let bytes = finder_output(command, current)?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "finderFailed")?;
+    if value["denied"] == true {
+        return Err("finderDenied");
+    }
+    serde_json::from_value(value["paths"].clone()).map_err(|_| "finderFailed")
+}
+fn finder_output(
+    mut command: std::process::Command,
+    current: impl Fn() -> bool,
+) -> Result<Vec<u8>, &'static str> {
     use std::{
         io::Read,
-        process::{Command, Stdio},
+        process::Stdio,
         time::{Duration, Instant},
     };
-    let script = r#"try { var f = Application('com.apple.finder'); JSON.stringify({paths: f.selection().map(x => ObjC.unwrap($.NSURL.URLWithString(x.url()).path))}); } catch(e) { JSON.stringify({denied: e.errorNumber === -1743}); }"#;
-    let mut child = Command::new("/usr/bin/osascript")
-        .args([
-            "-l",
-            "JavaScript",
-            "-e",
-            "ObjC.import('Foundation');",
-            "-e",
-            script,
-        ])
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -425,7 +557,7 @@ fn finder_paths() -> Result<Vec<PathBuf>, &'static str> {
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break Ok(s),
-            Ok(None) if start.elapsed() < Duration::from_secs(10) => {
+            Ok(None) if current() && start.elapsed() < Duration::from_secs(10) => {
                 std::thread::sleep(Duration::from_millis(20))
             }
             _ => {
@@ -439,11 +571,7 @@ fn finder_paths() -> Result<Vec<PathBuf>, &'static str> {
     if !status?.success() || read.is_err() || bytes.len() >= 1024 * 1024 {
         return Err("finderFailed");
     }
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "finderFailed")?;
-    if value["denied"] == true {
-        return Err("finderDenied");
-    }
-    serde_json::from_value(value["paths"].clone()).map_err(|_| "finderFailed")
+    Ok(bytes)
 }
 
 fn begin_prepare(
@@ -484,10 +612,10 @@ fn finish_prepare(
     token: u64,
     result: Result<operation::Prepared, AppError>,
 ) -> Result<operation::Summary, AppError> {
-    s.preparing = false;
     if s.request != token {
         return Err(AppError::reason("target_changed", "changed"));
     }
+    s.preparing = false;
     result.map(|prepared| {
         let summary = prepared.summary();
         s.prepared = Some(std::sync::Arc::new(prepared));
@@ -549,6 +677,9 @@ pub struct OperationState {
 pub fn get_operation<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> OperationState {
     let inbox = app.state::<Inbox>();
     let s = inbox.0.lock().unwrap();
+    operation_state(&s)
+}
+fn operation_state(s: &Snapshot) -> OperationState {
     OperationState {
         revision: s.revision,
         prepared: if s.operation.as_ref().is_some_and(|p| p.busy()) {
@@ -558,6 +689,45 @@ pub fn get_operation<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> OperationSt
         },
         progress: s.operation.clone(),
     }
+}
+pub fn session<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> (Snapshot, OperationState) {
+    let inbox = app.state::<Inbox>();
+    let s = inbox.0.lock().unwrap();
+    (s.clone(), operation_state(&s))
+}
+fn accept_edit(
+    s: &mut Snapshot,
+    expected_edit_revision: u64,
+    operation_id: Option<&str>,
+) -> Result<(), AppError> {
+    if s.operation_locked() || candidate_pending(s) {
+        return Err(AppError::reason("busy", "busy"));
+    }
+    if s.edit_revision != expected_edit_revision
+        || s.operation.as_ref().map(|p| p.operation_id.as_str()) != operation_id
+    {
+        return Err(AppError::reason("target_changed", "changed"));
+    }
+    s.request += 1;
+    edited(s);
+    s.error = None;
+    Ok(())
+}
+#[tauri::command]
+pub fn begin_edit<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    expected_edit_revision: u64,
+    operation_id: Option<String>,
+) -> Result<(), AppError> {
+    let inbox = app.state::<Inbox>();
+    let mut s = inbox.0.lock().unwrap();
+    accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
+    commit_update(&app, s);
+    Ok(())
+}
+#[tauri::command]
+pub fn set_pinned<R: tauri::Runtime>(app: tauri::AppHandle<R>, pinned: bool) {
+    update(&app, |s| s.pinned = pinned);
 }
 fn claim_commit(
     s: &mut Snapshot,
@@ -801,6 +971,144 @@ mod tests {
         progress.phase = "completed".into();
         progress
     }
+    fn successful_state() -> super::Snapshot {
+        let mut s = targets();
+        let mut progress = completed_operation();
+        progress.items = s
+            .items
+            .iter()
+            .map(|i| crate::operation::ItemResult {
+                target_id: i.id.clone(),
+                status: "succeeded".into(),
+                error: None,
+            })
+            .collect();
+        s.cleanup = Some((progress.operation_id.clone(), s.edit_revision));
+        s.operation = Some(progress);
+        s
+    }
+    #[test]
+    fn successful_release_waits_for_candidates_and_preserves_pin() {
+        for pending in 0..4 {
+            let mut s = successful_state();
+            s.pinned = true;
+            let token = s.cleanup.clone().unwrap();
+            s.choosing = pending == 0;
+            s.checking = pending == 1;
+            s.active_read = (pending == 2).then_some(1);
+            s.preparing = pending == 3;
+            assert!(!super::release_success(&mut s, &token));
+            assert_eq!(s.items.len(), 3);
+            s.choosing = false;
+            s.checking = false;
+            s.active_read = None;
+            s.preparing = false;
+            assert!(super::release_success(&mut s, &token));
+            assert!(s.items.is_empty());
+            assert!(s.operation.is_none());
+            assert!(s.cleanup.is_none());
+            assert!(s.pinned);
+            assert_eq!(s.edit_revision, token.1 + 1);
+        }
+    }
+    #[test]
+    fn successful_timer_cannot_clear_new_edits_or_another_operation() {
+        for edit in 0..3 {
+            let mut s = successful_state();
+            let token = s.cleanup.clone().unwrap();
+            match edit {
+                0 => super::accept(&mut s, "service", targets().items),
+                1 => super::remove(&mut s, 7, 0),
+                _ => super::accept_edit(&mut s, token.1, Some(&token.0)).unwrap(),
+            }
+            assert!(!super::release_success(&mut s, &token));
+            assert!(!s.items.is_empty());
+            assert!(s.operation.is_none());
+        }
+        let mut s = successful_state();
+        let token = s.cleanup.clone().unwrap();
+        s.operation.as_mut().unwrap().operation_id = "new-operation".into();
+        assert!(!super::release_success(&mut s, &token));
+    }
+    #[test]
+    fn queued_success_callback_rechecks_input_before_hiding() {
+        use tauri::Manager;
+        let state = successful_state();
+        let token = state.cleanup.clone().unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        // Capture the callback first, then let input run before the main queue executes it.
+        let queued = || super::finish_success(app.handle(), &token);
+        {
+            let inbox = app.state::<super::Inbox>();
+            let mut s = inbox.0.lock().unwrap();
+            s.checking = true;
+        }
+        assert!(queued());
+        {
+            let inbox = app.state::<super::Inbox>();
+            let mut s = inbox.0.lock().unwrap();
+            let request = s.request;
+            super::finish_input(&mut s, request, "service", Ok(targets().items));
+        }
+        assert!(!queued());
+        let snapshot = super::session(app.handle()).0;
+        assert_eq!(snapshot.items.len(), 3);
+        assert_eq!(snapshot.source, "service");
+        assert!(snapshot.cleanup.is_none());
+        assert!(snapshot.operation.is_none());
+    }
+    #[test]
+    fn invalid_input_keeps_success_context_and_release_eligibility() {
+        let mut s = successful_state();
+        let token = s.cleanup.clone().unwrap();
+        super::accept(&mut s, "service", vec![]);
+        assert_eq!(s.cleanup.as_ref(), Some(&token));
+        assert_eq!(s.items.len(), 3);
+        assert!(super::release_success(&mut s, &token));
+    }
+    #[test]
+    fn explicit_edit_rejects_stale_busy_and_uncertain_contexts() {
+        for case in 0..6 {
+            let mut s = successful_state();
+            let token = s.cleanup.clone().unwrap();
+            match case {
+                0 => s.edit_revision += 1,
+                1 => s.operation.as_mut().unwrap().operation_id = "different".into(),
+                2 => s.checking = true,
+                3 => s.choosing = true,
+                4 => s.operation.as_mut().unwrap().phase = "running".into(),
+                _ => s.operation.as_mut().unwrap().phase = "uncertain".into(),
+            }
+            assert!(super::accept_edit(&mut s, token.1, Some(&token.0)).is_err());
+            assert_eq!(s.items.len(), 3);
+            assert!(s.operation.is_some());
+        }
+    }
+    #[test]
+    fn late_input_and_prepare_cannot_clear_a_new_request_busy_state() {
+        let mut s = targets();
+        s.request = 2;
+        s.checking = true;
+        s.preparing = true;
+        super::finish_input(&mut s, 1, "service", Ok(vec![]));
+        assert!(s.checking);
+        assert!(super::finish_prepare(&mut s, 1, Err("invalid".into())).is_err());
+        assert!(s.preparing);
+    }
+    #[test]
+    fn invalidated_finder_process_is_killed_and_reaped() {
+        let mut command = std::process::Command::new("/bin/sleep");
+        command.arg("5");
+        let start = std::time::Instant::now();
+        assert_eq!(
+            super::finder_output(command, || false),
+            Err("finderTimeout")
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    }
     #[test]
     fn commit_claim_is_single_use_and_confirmation_is_bound() {
         let r = crate::operation::parse(
@@ -1008,8 +1316,15 @@ mod tests {
             super::check_paths(vec![temp.0.clone()]).unwrap(),
         );
         let app = tauri::test::mock_builder()
+            .manage(crate::Session {
+                version: env!("CARGO_PKG_VERSION"),
+                locale: crate::localization::Locale::En,
+            })
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .invoke_handler(tauri::generate_handler![
+                crate::get_session,
+                super::begin_edit,
+                super::set_pinned,
                 super::get_entry,
                 super::prepare_operation,
                 super::cancel_prepared,
@@ -1135,6 +1450,13 @@ mod tests {
         )
         .unwrap();
         let done = wait();
+        let snapshot = ipc("get_session", json!({})).unwrap();
+        assert_eq!(
+            snapshot["entry"]["revision"],
+            snapshot["operation"]["revision"]
+        );
+        assert_eq!(snapshot["operation"], done);
+        assert!(snapshot["entry"].get("cleanup").is_none());
         assert_eq!(
             done["progress"]["items"][0]["status"], "succeeded",
             "{done}"
@@ -1149,6 +1471,20 @@ mod tests {
         .unwrap();
         assert_eq!(op()["progress"], done["progress"]);
         assert!(prepare(json!({"type":"restore"})).is_err());
+        let before_edit = entry();
+        super::receive(app.handle(), "service", vec![]);
+        for _ in 0..1000 {
+            if entry()["checking"] == false {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(entry()["editRevision"], before_edit["editRevision"]);
+        assert_eq!(op()["progress"], done["progress"]);
+        ipc("begin_edit", json!({"expectedEditRevision": before_edit["editRevision"], "operationId": p["operationId"]})).unwrap();
+        assert_eq!(entry()["items"], before_edit["items"]);
+        assert!(op()["progress"].is_null());
+
         select();
         let p = apply();
         assert!(p["confirmationToken"].is_string());
@@ -1202,6 +1538,18 @@ mod tests {
             "{done}"
         );
         assert!(!crate::icon::fingerprint(&temp.0).unwrap().custom);
+        ipc("set_pinned", json!({"pinned":true})).unwrap();
+        for _ in 0..1000 {
+            if entry()["items"].as_array().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let released = ipc("get_session", json!({})).unwrap();
+        assert!(released["entry"]["items"].as_array().unwrap().is_empty());
+        assert!(released["operation"]["progress"].is_null());
+        assert!(released["operation"]["prepared"].is_null());
+        assert_eq!(released["entry"]["pinned"], true);
     }
     #[test]
     fn removal_preserves_order_and_becomes_manual_editing() {
@@ -1341,37 +1689,32 @@ mod tests {
         assert_eq!(s.source, "picker");
     }
     #[test]
-    fn failed_automatic_reads_clear_old_targets_but_manual_reads_preserve_them() {
+    fn failed_reads_clear_only_automatic_targets_without_results() {
         for automatic in [true, false] {
-            for result in [Ok(vec![]), Err("invalid"), Err("finderDenied")] {
-                let mut s = super::Snapshot::default();
-                super::accept(
-                    &mut s,
-                    "finder-auto",
-                    vec![super::InputItem {
-                        path: "/tmp/old".into(),
-                        kind: "directory",
-                        ..Default::default()
-                    }],
-                );
-                s.operation = Some(completed_operation());
-                // Manual empty or failed reads preserve the completed result and targets.
-                let clears = automatic;
-                super::finish_finder(&mut s, automatic, result);
-                assert_eq!(s.items.is_empty(), automatic);
-                assert_eq!(s.operation.is_none(), clears);
-                assert!(s.error.is_some());
+            for context in [true, false] {
+                for result in [Ok(vec![]), Err("invalid"), Err("finderDenied")] {
+                    let mut s = targets();
+                    if context {
+                        s.operation = Some(completed_operation());
+                    }
+                    let clears = automatic && !context;
+                    super::finish_finder(&mut s, automatic, result);
+                    assert_eq!(s.items.is_empty(), clears);
+                    assert_eq!(s.operation.is_some(), context);
+                    assert!(s.error.is_some());
+                }
             }
         }
     }
     #[test]
-    fn automatic_clear_drops_a_completed_result() {
+    fn automatic_clear_preserves_a_completed_result() {
         let mut s = targets();
         s.operation = Some(completed_operation());
         let request = s.request;
         super::clear_automatic(&mut s, request);
-        assert!(s.items.is_empty());
-        assert!(s.operation.is_none());
+        assert_eq!(s.items.len(), 3);
+        assert!(s.operation.is_some());
+        assert_eq!(super::plan_wake(&mut s, true), (false, false));
     }
     #[test]
     fn stale_reads_do_not_replace_a_newer_wake_decision() {

@@ -254,22 +254,40 @@ pub fn worker() -> bool {
 // Command integration tests exercise the same inspector in-process; the real worker has a separate executable-level check.
 #[cfg(test)]
 pub fn check(request: Request) -> Result<Checked, AppError> {
+    check_cancellable(request, || true)
+}
+#[cfg(test)]
+pub fn check_cancellable(
+    request: Request,
+    current: impl Fn() -> bool,
+) -> Result<Checked, AppError> {
+    if !current() {
+        return Err(failure("check"));
+    }
     objc2::rc::autoreleasepool(|_| execute(request))
 }
 #[cfg(not(test))]
 pub fn check(request: Request) -> Result<Checked, AppError> {
+    check_cancellable(request, || true)
+}
+#[cfg(not(test))]
+pub fn check_cancellable(
+    request: Request,
+    current: impl Fn() -> bool,
+) -> Result<Checked, AppError> {
     let input = serde_json::to_vec(&request).map_err(|_| failure("payload"))?;
     if input.len() > 1024 * 1024 {
         return Err(failure("budget"));
     }
     let mut command = Command::new(std::env::current_exe().map_err(io_error)?);
     command.arg("--target-check-worker");
-    check_process(command, input, Duration::from_secs(10))
+    check_process(command, input, Duration::from_secs(10), current)
 }
 fn check_process(
     mut command: Command,
     input: Vec<u8>,
     budget: Duration,
+    current: impl Fn() -> bool,
 ) -> Result<Checked, AppError> {
     let mut child = command
         .stdin(Stdio::piped())
@@ -291,7 +309,9 @@ fn check_process(
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
-            Ok(None) if start.elapsed() < budget => std::thread::sleep(Duration::from_millis(10)),
+            Ok(None) if current() && start.elapsed() < budget => {
+                std::thread::sleep(Duration::from_millis(10))
+            }
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -345,10 +365,18 @@ mod tests {
         let mut command = Command::new("/bin/sleep");
         command.arg("5");
         let start = Instant::now();
-        let err = check_process(command, vec![], Duration::from_millis(30))
+        let err = check_process(command, vec![], Duration::from_millis(30), || true)
             .err()
             .unwrap();
         assert_eq!(err.code, "timeout");
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+    #[test]
+    fn invalidated_workers_are_killed_and_reaped() {
+        let mut command = Command::new("/bin/sleep");
+        command.arg("5");
+        let start = Instant::now();
+        assert!(check_process(command, vec![], Duration::from_secs(10), || false).is_err());
         assert!(start.elapsed() < Duration::from_secs(1));
     }
     #[test]
