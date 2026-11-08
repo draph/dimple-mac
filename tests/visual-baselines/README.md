@@ -23,3 +23,14 @@ The checker requires the recorded browser environment and compares all 70 PNGs
 against the committed goldens. The threshold is zero changed pixels and zero
 channel delta. ICNS compatibility and ARGB alpha preservation are checked on
 macOS with `cargo test --manifest-path src-tauri/Cargo.toml --locked system_iconutil_reads`.
+
+## Upstream native-blue reference
+
+`upstream-reference/` contains test-only outputs from the pinned upstream
+commit for the same `svg` mask. They close the T14 requirement to compare
+native blue with the fixed upstream implementation. They are not part of the
+70-image zero-difference checker: the comparison is reviewed with the
+informational metrics and notes in
+[`upstream-reference/README.md`](upstream-reference/README.md). Regenerating
+the reference is a development-only step that requires ImageMagick; neither
+ImageMagick nor the reference images are packaged with the application.
