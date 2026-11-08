@@ -6,7 +6,7 @@ import type { Session } from "./i18n.ts";
 function session(revision = 1): Session {
   return {
     version: "0.1.0", locale: "en",
-    entry: { revision, editRevision: 1, pinned: false, source: "picker", items: [{ id: "one", path: "/tmp/one", actualPath: "/tmp/one", linked: false, kind: "directory", error: null }], issues: [], error: null, choosing: false, reading: false, checking: false, preparing: false },
+    entry: { badge: { id: "code", width: 384, height: 256, opaque: false }, badgeError: null, importing: false, revision, editRevision: 1, pinned: false, source: "picker", items: [{ id: "one", path: "/tmp/one", actualPath: "/tmp/one", linked: false, kind: "directory", error: null }], issues: [], error: null, choosing: false, reading: false, checking: false, preparing: false },
     operation: { revision, prepared: null, progress: null },
   };
 }
@@ -50,7 +50,7 @@ test("exports survive notifications but reject accepted edits and target replace
 
 test("exports cannot enter preparation while another input or operation owns the session", () => {
   const draft = session();
-  for (const key of ["choosing", "reading", "checking", "preparing"] as const) {
+  for (const key of ["choosing", "reading", "checking", "preparing", "importing"] as const) {
     const updated = session();
     updated.entry[key] = true;
     assert.ok(!sameDraft(draft, updated));
@@ -70,4 +70,15 @@ test("late errors belong only to the same edit and operation context", () => {
   after.operation.progress = { operationId: "new", sequence: 1, phase: "running", slow: false, stopped: false, items: [] };
   assert.ok(!sameContext(before, after));
   assert.ok(!sameContext(null, before));
+});
+
+test("invalid imports block old exports but allow restore without discarding the draft", () => {
+  const draft = session();
+  const failed = session(2);
+  failed.entry.badgeError = { code: "asset_error", params: { reason: "empty" } };
+  assert.ok(!sameDraft(draft, failed));
+  assert.ok(sameDraft(draft, failed, true));
+  assert.ok(sameContext(draft, failed));
+  failed.entry.badge.id = "replacement";
+  assert.ok(!sameDraft(draft, failed, true));
 });

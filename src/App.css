@@ -35,6 +35,7 @@ summary { font-size: 12px; color: var(--accent); padding: 3px 0; }
 .target-list li > div { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .path { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; margin-top: 3px; }
 .badge-choice { display: inline-flex; gap: 10px; align-items: center; border-color: var(--accent); color: var(--accent); }
+.badge-choice[aria-pressed="false"] { border-color: var(--border); color: inherit; }
 .badge-choice span { font: bold 22px monospace; }
 .preview { min-height: 140px; display: grid; place-items: center; border-radius: 16px; background: radial-gradient(ellipse, #b8cde53b, transparent 70%); }
 .preview canvas { width: 136px; height: 136px; }

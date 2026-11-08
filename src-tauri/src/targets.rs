@@ -46,6 +46,7 @@ pub struct Issue {
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Checked {
+    pub mask: Option<crate::assets::Mask>,
     pub items: Vec<Target>,
     pub issues: Vec<Issue>,
     pub fingerprints: Vec<crate::icon::Fingerprint>,
@@ -166,7 +167,8 @@ fn execute(request: Request) -> Result<Checked, AppError> {
             }
             let mut out = Checked::default();
             let mut seen = HashSet::new();
-            let mut badges = 0;
+            let mut badges = Vec::new();
+            let input_count = paths.len();
             for path in paths {
                 match inspect(path.clone()) {
                     Ok(t) => {
@@ -189,18 +191,20 @@ fn execute(request: Request) -> Result<Checked, AppError> {
                     }
                     Err(error) => {
                         if error.params.get("reason").is_some_and(|v| v == "badge") {
-                            badges += 1;
+                            badges.push(path.clone());
                         }
                         out.issues.push(Issue { path, error });
                     }
                 }
             }
-            if badges > 0 {
-                return Err(failure(if out.items.is_empty() {
-                    "badge_unavailable"
-                } else {
-                    "mixed"
-                }));
+            if !badges.is_empty() {
+                if !out.items.is_empty() || input_count != badges.len() {
+                    return Err(failure("mixed"));
+                }
+                if badges.len() != 1 {
+                    return Err(failure("multiple_badges"));
+                }
+                out.mask = Some(crate::assets::load(&badges[0])?);
             }
             if out.items.len() > 100 {
                 return Err(AppError::reason("invalid_input", "limit").param("limit", 100));
@@ -221,6 +225,7 @@ fn execute(request: Request) -> Result<Checked, AppError> {
                 items: targets,
                 issues: vec![],
                 fingerprints,
+                ..Default::default()
             })
         }
     }
@@ -275,6 +280,11 @@ pub fn check_cancellable(
     request: Request,
     current: impl Fn() -> bool,
 ) -> Result<Checked, AppError> {
+    static WORKER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _worker = WORKER.lock().map_err(|_| failure("check"))?;
+    if !current() {
+        return Err(failure("check"));
+    }
     let input = serde_json::to_vec(&request).map_err(|_| failure("payload"))?;
     if input.len() > 1024 * 1024 {
         return Err(failure("budget"));
@@ -411,6 +421,38 @@ mod tests {
         fs::rename(&p, root.0.join("moved")).unwrap();
         fs::create_dir(&p).unwrap();
         assert!(revalidate(&t[0]).is_err());
+    }
+    #[test]
+    fn imports_are_atomic_and_return_only_safe_masks() {
+        let root = root();
+        let one = root.0.join("badge.svg");
+        std::fs::write(
+            &one,
+            include_bytes!("../../tests/fixtures/badges/geometric-cross.svg"),
+        )
+        .unwrap();
+        let checked = execute(Request::Inspect(vec![one.clone()])).unwrap();
+        assert!(checked.items.is_empty());
+        assert_eq!(checked.mask.unwrap().bounds, [0, 0, 384, 384]);
+        assert_eq!(
+            execute(Request::Inspect(vec![one.clone(), one.clone()]))
+                .err()
+                .unwrap()
+                .params["reason"],
+            "multiple_badges"
+        );
+        assert_eq!(
+            execute(Request::Inspect(vec![one.clone(), root.0.clone()]))
+                .err()
+                .unwrap()
+                .params["reason"],
+            "mixed"
+        );
+        std::fs::write(one.clone(), b"broken").unwrap();
+        assert_eq!(
+            execute(Request::Inspect(vec![one])).err().unwrap().code,
+            "asset_error"
+        );
     }
     #[test]
     fn unique_limit_is_after_deduplication_and_badges_are_atomic() {

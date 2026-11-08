@@ -8,6 +8,11 @@ use tauri::{Emitter, Manager};
 #[derive(Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    badge: Badge,
+    badge_error: Option<AppError>,
+    importing: bool,
+    #[serde(skip)]
+    mask: Option<std::sync::Arc<crate::assets::Mask>>,
     revision: u64,
     edit_revision: u64,
     pinned: bool,
@@ -33,6 +38,24 @@ pub struct Snapshot {
     read_counter: u64,
     checking: bool,
 }
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Badge {
+    id: String,
+    width: u32,
+    height: u32,
+    opaque: bool,
+}
+impl Default for Badge {
+    fn default() -> Self {
+        Self {
+            id: "code".into(),
+            width: 384,
+            height: 256,
+            opaque: false,
+        }
+    }
+}
 impl Snapshot {
     fn operation_locked(&self) -> bool {
         self.prepared.is_some() || self.operation.as_ref().is_some_and(|p| p.busy())
@@ -47,6 +70,8 @@ where
 #[derive(Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputItem {
+    #[serde(skip)]
+    mask: Option<crate::assets::Mask>,
     id: String,
     actual_path: PathBuf,
     linked: bool,
@@ -122,7 +147,7 @@ fn finish_success<R: tauri::Runtime>(app: &tauri::AppHandle<R>, token: &(String,
     false
 }
 fn candidate_pending(s: &Snapshot) -> bool {
-    s.choosing || s.checking || s.active_read.is_some() || s.preparing
+    s.choosing || s.checking || s.importing || s.active_read.is_some() || s.preparing
 }
 fn all_succeeded(s: &Snapshot) -> bool {
     s.operation.as_ref().is_some_and(|p| {
@@ -180,7 +205,11 @@ fn receive_paths<R: tauri::Runtime>(
         let state = app.state::<Inbox>();
         let mut s = state.0.lock().unwrap();
         show(&app);
-        if s.operation_locked() || (s.choosing && !from_picker) || s.checking || s.preparing {
+        if s.operation_locked()
+            || (s.choosing && !from_picker)
+            || (s.checking && !s.importing)
+            || s.preparing
+        {
             drop(s);
             error(&app, "busy");
             return;
@@ -188,17 +217,60 @@ fn receive_paths<R: tauri::Runtime>(
         s.choosing = false;
         invalidate_read(&mut s);
         s.checking = true;
+        s.importing = paths.len() == 1
+            && paths[0]
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"));
         s.request += 1;
         let revision = s.request;
         commit_update(&app, s);
         revision
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let checked = check_paths_current(paths, || {
+        let checked = check_native_paths_current(paths, || {
             app.state::<Inbox>().0.lock().unwrap().request == revision
         });
-        update(&app, |s| finish_input(s, revision, &source, checked));
+        update(&app, |s| finish_native_input(s, revision, &source, checked));
     });
+}
+fn finish_native_input(
+    s: &mut Snapshot,
+    request: u64,
+    source: &str,
+    checked: Result<Vec<InputItem>, AppError>,
+) {
+    if s.request != request {
+        return;
+    }
+    match checked {
+        Ok(items) => finish_input(s, request, source, Ok(items)),
+        Err(e) => {
+            let import_failed = e.code == "asset_error"
+                || (s.importing
+                    && !matches!(
+                        e.params.get("reason").and_then(|v| v.as_str()),
+                        Some("mixed" | "multiple_badges")
+                    ));
+            s.checking = false;
+            s.importing = false;
+            if import_failed {
+                s.badge_error = Some(if e.code == "asset_error" {
+                    e
+                } else {
+                    AppError::reason(
+                        "asset_error",
+                        if e.code == "timeout" {
+                            "timeout"
+                        } else {
+                            "unavailable"
+                        },
+                    )
+                });
+            } else {
+                s.error = Some(e);
+            }
+        }
+    }
 }
 fn finish_input(
     s: &mut Snapshot,
@@ -210,6 +282,7 @@ fn finish_input(
         return;
     }
     s.checking = false;
+    s.importing = false;
     match checked {
         Ok(items) => accept(s, source, items),
         Err(code) => s.error = Some(code.into()),
@@ -224,16 +297,55 @@ fn check_paths_current(
     paths: Vec<PathBuf>,
     current: impl Fn() -> bool,
 ) -> Result<Vec<InputItem>, &'static str> {
-    let checked = targets::check_cancellable(targets::Request::Inspect(paths), current).map_err(
-        |e| match e.params.get("reason").and_then(|v| v.as_str()) {
+    let badge_candidate = paths.len() == 1
+        && paths[0]
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"));
+    finder_check_result(badge_candidate, check_native_paths_current(paths, current))
+}
+fn finder_check_result(
+    badge_candidate: bool,
+    result: Result<Vec<InputItem>, AppError>,
+) -> Result<Vec<InputItem>, &'static str> {
+    match result {
+        Err(e) if e.code == "asset_error" || badge_candidate => Ok(vec![InputItem {
+            kind: "badge",
+            error: Some(if e.code == "asset_error" {
+                e
+            } else {
+                AppError::reason(
+                    "asset_error",
+                    if e.code == "timeout" {
+                        "timeout"
+                    } else {
+                        "unavailable"
+                    },
+                )
+            }),
+            ..Default::default()
+        }]),
+        result => result.map_err(|e| match e.params.get("reason").and_then(|v| v.as_str()) {
             Some("limit") => "limit",
             Some("mixed") => "mixed",
-            Some("badge_unavailable") => "badgeUnavailable",
+            Some("multiple_badges") => "multipleBadges",
             Some("empty") => "empty",
             Some("budget") => "budget",
             _ => "checkFailed",
-        },
-    )?;
+        }),
+    }
+}
+fn check_native_paths_current(
+    paths: Vec<PathBuf>,
+    current: impl Fn() -> bool,
+) -> Result<Vec<InputItem>, AppError> {
+    let checked = targets::check_cancellable(targets::Request::Inspect(paths), current)?;
+    if let Some(mask) = checked.mask {
+        return Ok(vec![InputItem {
+            kind: "badge",
+            mask: Some(mask),
+            ..Default::default()
+        }]);
+    }
     let mut items: Vec<_> = checked
         .items
         .into_iter()
@@ -265,14 +377,27 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
         return;
     }
     if items.iter().any(|i| i.kind == "badge") {
-        s.error = Some(
-            if items.iter().any(|i| i.kind == "directory") {
-                "mixed"
+        if items.len() == 1 {
+            let item = items.into_iter().next().unwrap();
+            if let Some(error) = item.error {
+                s.badge_error = Some(error);
+            } else if let Some(mask) = item.mask {
+                s.badge = Badge {
+                    id: targets::next_id("badge"),
+                    width: mask.width,
+                    height: mask.height,
+                    opaque: mask.opaque,
+                };
+                s.mask = Some(std::sync::Arc::new(mask));
+                s.badge_error = None;
+                s.error = None;
+                edited(s);
             } else {
-                "badgeUnavailable"
+                s.error = Some("badgeUnavailable".into());
             }
-            .into(),
-        );
+        } else {
+            s.error = Some("mixed".into());
+        }
         return;
     }
     let (mut valid, invalid): (Vec<_>, Vec<_>) =
@@ -353,7 +478,13 @@ fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
         s.error = Some("changed".into());
         return;
     }
-    if s.operation_locked() || s.choosing || s.checking || s.active_read.is_some() || s.preparing {
+    if s.operation_locked()
+        || s.choosing
+        || s.checking
+        || s.importing
+        || s.active_read.is_some()
+        || s.preparing
+    {
         s.error = Some("busy".into());
         return;
     }
@@ -393,6 +524,76 @@ pub fn choose_targets<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
             update(&app, |s| s.choosing = false);
         }
     });
+}
+#[tauri::command]
+pub fn choose_badge<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    use tauri_plugin_dialog::DialogExt;
+    {
+        let inbox = app.state::<Inbox>();
+        let mut s = inbox.0.lock().unwrap();
+        if s.operation_locked() || candidate_pending(&s) {
+            return;
+        }
+        s.choosing = true;
+        s.importing = true;
+        commit_update(&app, s);
+    }
+    app.dialog()
+        .file()
+        .add_filter("PNG / SVG", &["png", "svg"])
+        .pick_file(move |file| {
+            if let Some(file) = file {
+                match file.into_path() {
+                    Ok(path) => receive_paths(&app, "badge-picker", vec![path], true),
+                    Err(_) => update(&app, |s| {
+                        s.choosing = false;
+                        s.importing = false;
+                        s.badge_error = Some(AppError::reason("asset_error", "unavailable"));
+                    }),
+                }
+            } else {
+                update(&app, |s| {
+                    s.choosing = false;
+                    s.importing = false;
+                });
+            }
+        });
+}
+#[tauri::command]
+pub fn get_badge_mask<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    badge_id: String,
+) -> Result<String, AppError> {
+    let inbox = app.state::<Inbox>();
+    let s = inbox.0.lock().unwrap();
+    if s.badge.id != badge_id {
+        return Err(AppError::reason("invalid_input", "asset"));
+    }
+    s.mask
+        .as_ref()
+        .map(|m| m.png.clone())
+        .ok_or_else(|| AppError::reason("invalid_input", "asset"))
+}
+#[tauri::command]
+pub fn select_badge<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    expected_edit_revision: u64,
+    operation_id: Option<String>,
+    badge_id: String,
+) -> Result<(), AppError> {
+    let inbox = app.state::<Inbox>();
+    let mut s = inbox.0.lock().unwrap();
+    if badge_id != "code" && badge_id != s.badge.id {
+        return Err(AppError::reason("invalid_input", "asset"));
+    }
+    accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
+    if badge_id == "code" {
+        s.badge = Badge::default();
+        s.mask = None;
+    }
+    s.badge_error = None;
+    commit_update(&app, s);
+    Ok(())
 }
 #[tauri::command]
 pub fn finder_selection<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
@@ -504,7 +705,16 @@ fn complete_read(
     finish_finder(s, automatic, result);
 }
 fn finish_finder(s: &mut Snapshot, automatic: bool, result: Result<Vec<InputItem>, &'static str>) {
-    if automatic && s.operation.is_none() && !matches!(&result, Err("limit" | "mixed" | "budget")) {
+    if automatic
+        && s.operation.is_none()
+        && !matches!(
+            &result,
+            Err("limit" | "mixed" | "budget" | "multipleBadges")
+        )
+        && !result
+            .as_ref()
+            .is_ok_and(|items| items.iter().any(|i| i.kind == "badge"))
+    {
         s.items.clear();
         edited(s);
         s.issues.clear();
@@ -587,6 +797,11 @@ fn begin_prepare(
     if s.revision != input.revision {
         return Err(AppError::reason("target_changed", "changed"));
     }
+    if let operation::Action::Apply { badge_id, .. } = &input.action
+        && (s.badge_error.is_some() || *badge_id != s.badge.id)
+    {
+        return Err(AppError::reason("invalid_input", "asset"));
+    }
     let selected = operation::resolve(
         &input.target_ids,
         &s.items
@@ -628,17 +843,20 @@ pub async fn prepare_operation<R: tauri::Runtime>(
     request: String,
 ) -> Result<operation::Summary, AppError> {
     let input = operation::parse(&request)?;
-    let (selected, token) = {
+    let (selected, token, mask) = {
         let inbox = app.state::<Inbox>();
         let mut s = inbox.0.lock().unwrap();
         let selected = begin_prepare(&mut s, &input)?;
         let token = s.request;
+        let mask = s.mask.clone();
         commit_update(&app, s);
-        (selected, token)
+        (selected, token, mask)
     };
     let result = tauri::async_runtime::spawn_blocking(move || {
         let images = operation::validate(&input)?;
-        operation::Prepared::build(input, selected, images)
+        let mut prepared = operation::Prepared::build(input, selected, images)?;
+        prepared.mask = mask;
+        Ok(prepared)
     })
     .await
     .unwrap_or_else(|_| Err(AppError::reason("invalid_input", "check")));
@@ -941,7 +1159,7 @@ fn finish_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 pub fn can_hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     let inbox = app.state::<Inbox>();
     let s = inbox.0.lock().unwrap();
-    !s.operation_locked() && !s.preparing && !s.choosing
+    !s.operation_locked() && !s.preparing && !s.choosing && !s.importing
 }
 
 #[cfg(test)]
@@ -1602,6 +1820,189 @@ mod tests {
         super::complete_read(&mut s, 1, 0, true, Ok(targets().items));
         assert_eq!(s.items.len(), 2);
         assert_eq!(s.source, "manual");
+    }
+    fn imported_mask() -> crate::assets::Mask {
+        crate::assets::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../tests/fixtures/badges/geometric-cross.svg"),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn finder_import_timeout_preserves_manual_and_automatic_context() {
+        for automatic in [false, true] {
+            for with_result in [false, true] {
+                let mut s = targets();
+                s.active_read = Some(1);
+                s.request = 2;
+                s.operation = with_result.then(completed_operation);
+                let before = serde_json::to_value(&s.items).unwrap();
+                let revision = s.edit_revision;
+                let operation = s.operation.as_ref().map(|p| p.operation_id.clone());
+                let result = super::finder_check_result(
+                    true,
+                    Err(crate::localization::AppError::reason("timeout", "check")),
+                );
+                super::complete_read(&mut s, 1, 2, automatic, result);
+                assert_eq!(serde_json::to_value(&s.items).unwrap(), before);
+                assert_eq!(s.edit_revision, revision);
+                assert_eq!(s.source, "finder-auto");
+                assert_eq!(s.badge.id, "code");
+                assert_eq!(s.badge_error.as_ref().unwrap().params["reason"], "timeout");
+                assert_eq!(
+                    s.operation.as_ref().map(|p| p.operation_id.clone()),
+                    operation
+                );
+                assert!(s.active_read.is_none());
+            }
+        }
+    }
+    #[test]
+    fn imports_preserve_targets_reject_stale_results_and_gate_preparation() {
+        let mut s = targets();
+        s.operation = Some(completed_operation());
+        s.checking = true;
+        s.importing = true;
+        s.request = 10;
+        let before = s.edit_revision;
+        super::finish_native_input(
+            &mut s,
+            9,
+            "drop",
+            Ok(vec![super::InputItem {
+                kind: "badge",
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }]),
+        );
+        assert!(s.importing);
+        assert_eq!(s.badge.id, "code");
+        super::finish_native_input(
+            &mut s,
+            10,
+            "drop",
+            Ok(vec![super::InputItem {
+                kind: "badge",
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }]),
+        );
+        assert_eq!(s.items.len(), 3);
+        assert_eq!(s.source, "finder-auto");
+        assert_eq!(s.edit_revision, before + 1);
+        assert!(s.operation.is_none());
+        assert!(!s.importing);
+        let id = s.badge.id.clone();
+        let png = s.mask.as_ref().unwrap().png.clone();
+        s.operation = Some(completed_operation());
+        s.importing = true;
+        s.checking = true;
+        super::finish_native_input(
+            &mut s,
+            10,
+            "drop",
+            Err(crate::localization::AppError::reason(
+                "asset_error",
+                "empty",
+            )),
+        );
+        assert_eq!(s.badge.id, id);
+        assert_eq!(s.mask.as_ref().unwrap().png, png);
+        assert_eq!(s.edit_revision, before + 1);
+        assert!(s.operation.is_some());
+        assert!(s.badge_error.is_some());
+        assert!(!s.importing);
+        s.operation = None;
+        let request = crate::operation::parse(&serde_json::json!({"revision":s.revision,"targetIds":["any"],"action":{"type":"apply","templateId":"big-sur-light-blue","badgeId":id,"params":{"scale":1,"offsetX":0,"offsetY":0},"images":[]}}).to_string()).unwrap();
+        assert_eq!(
+            super::begin_prepare(&mut s, &request).unwrap_err().params["reason"],
+            "asset"
+        );
+        let snapshot = serde_json::to_value(&s).unwrap();
+        assert!(snapshot.get("mask").is_none());
+        assert!(snapshot["badge"].get("png").is_none());
+    }
+    #[test]
+    fn badge_commands_restore_current_asset_and_reject_forged_ids() {
+        use serde_json::{Value, json};
+        use tauri::Manager;
+        let mut state = targets();
+        super::accept(
+            &mut state,
+            "drop",
+            vec![super::InputItem {
+                kind: "badge",
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }],
+        );
+        state.badge_error = Some(crate::localization::AppError::reason(
+            "asset_error",
+            "empty",
+        ));
+        let id = state.badge.id.clone();
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .manage(crate::Session {
+                version: "test",
+                locale: crate::localization::Locale::En,
+            })
+            .invoke_handler(tauri::generate_handler![
+                crate::get_session,
+                super::get_badge_mask,
+                super::select_badge
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let ipc = |cmd: &str, body: Value| {
+            tauri::test::get_ipc_response(
+                &window,
+                tauri::webview::InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "tauri://localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.into(),
+                },
+            )
+            .map(|b| b.deserialize::<Value>().unwrap())
+        };
+        assert!(ipc("get_badge_mask", json!({"badgeId":"/tmp/arbitrary.svg"})).is_err());
+        let png = ipc("get_badge_mask", json!({"badgeId":id})).unwrap();
+        assert!(png.as_str().unwrap().starts_with("iVBOR"));
+        let snapshot = ipc("get_session", json!({})).unwrap();
+        assert_eq!(snapshot["entry"]["badge"]["id"], id);
+        assert!(!snapshot.to_string().contains("iVBOR"));
+        let revision = snapshot["entry"]["editRevision"].as_u64().unwrap();
+        for (version, badge) in [(revision, "forged"), (revision - 1, id.as_str())] {
+            assert!(
+                ipc(
+                    "select_badge",
+                    json!({"expectedEditRevision":version,"operationId":null,"badgeId":badge})
+                )
+                .is_err()
+            );
+        }
+        ipc(
+            "select_badge",
+            json!({"expectedEditRevision":revision,"operationId":null,"badgeId":id}),
+        )
+        .unwrap();
+        let snapshot = ipc("get_session", json!({})).unwrap();
+        assert!(snapshot["entry"]["badgeError"].is_null());
+        assert_eq!(snapshot["entry"]["items"].as_array().unwrap().len(), 3);
+        ipc(
+            "select_badge",
+            json!({"expectedEditRevision":revision+1,"operationId":null,"badgeId":"code"}),
+        )
+        .unwrap();
+        assert!(ipc("get_badge_mask", json!({"badgeId":id})).is_err());
+        assert!(app.state::<super::Inbox>().0.lock().unwrap().mask.is_none());
     }
     #[test]
     fn badge_input_keeps_the_current_targets() {

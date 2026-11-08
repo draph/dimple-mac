@@ -15,10 +15,11 @@ export function sameContext(previous: Session | null, latest: Session | null): b
     && previous?.operation.prepared?.operationId === latest?.operation.prepared?.operationId;
 }
 
-export function sameDraft(draft: Session, latest: Session | null): boolean {
+export function sameDraft(draft: Session, latest: Session | null, restore = false): boolean {
   return !!latest && draft.entry.editRevision === latest.entry.editRevision
     && draft.entry.items.length === latest.entry.items.length
     && draft.entry.items.every((item, index) => item.id === latest.entry.items[index].id)
+    && draft.entry.badge.id === latest.entry.badge.id && (restore || !latest.entry.badgeError)
     && !latest.operation.prepared && !latest.operation.progress
-    && !latest.entry.choosing && !latest.entry.reading && !latest.entry.checking && !latest.entry.preparing;
+    && !latest.entry.choosing && !latest.entry.reading && !latest.entry.checking && !latest.entry.preparing && !latest.entry.importing;
 }

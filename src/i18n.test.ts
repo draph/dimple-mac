@@ -54,3 +54,12 @@ test("target and operation errors use bounded reason mappings", () => {
     assert.equal(errorMessage(locale, {code: "entry_error", params: {reason: "/private/unknown"}}), translate(locale, "error.generic"));
   }
 });
+
+test("asset errors have bounded localized reasons", () => {
+  for (const locale of ["en", "zh-Hans"] as const) {
+    for (const reason of ["size", "damaged", "unsupported", "empty", "reference", "complexity", "timeout"]) {
+      assert.equal(errorMessage(locale, {code: "asset_error", params: {reason}}), translate(locale, `asset.error.${reason}`));
+    }
+    assert.equal(errorMessage(locale, {code: "asset_error", params: {reason: "/private/path"}}), translate(locale, "error.generic"));
+  }
+});

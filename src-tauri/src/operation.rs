@@ -77,7 +77,7 @@ pub fn validate(input: &Request) -> Result<Vec<Vec<u8>>, AppError> {
     else {
         return Ok(vec![]);
     };
-    if template_id != "big-sur-light-blue" || badge_id != "code" {
+    if template_id != "big-sur-light-blue" || badge_id.is_empty() {
         return Err(invalid("asset"));
     }
     if !params.scale.is_finite()
@@ -159,6 +159,7 @@ pub fn validate(input: &Request) -> Result<Vec<Vec<u8>>, AppError> {
 }
 #[derive(Clone)]
 pub struct Prepared {
+    pub mask: Option<std::sync::Arc<crate::assets::Mask>>,
     pub id: String,
     pub request: Request,
     pub targets: Vec<Target>,
@@ -222,6 +223,7 @@ impl Progress {
 impl Prepared {
     pub fn new(request: Request, targets: Vec<Target>) -> Self {
         Self {
+            mask: None,
             id: targets::next_id("operation"),
             request,
             targets,

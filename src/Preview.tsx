@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import templateUrl from "../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset/icon_512x512@2x.png";
-import badgeUrl from "./assets/code.svg";
+
 import { translate, type Locale } from "./i18n";
 
 // shortcut: preview uses candidate engraving values; calibrate all sizes in T14.
@@ -12,8 +12,9 @@ function render(canvas: HTMLCanvasElement, template: HTMLImageElement, badge: HT
   if (!ctx || !ink) throw new Error("E_PREVIEW_CONTEXT");
   canvas.width = canvas.height = size;
   ctx.scale(size / 1024, size / 1024);
-  const width = 384;
-  const height = width * badge.naturalHeight / badge.naturalWidth;
+  const factor = 384 / Math.max(badge.naturalWidth, badge.naturalHeight);
+  const width = badge.naturalWidth * factor;
+  const height = badge.naturalHeight * factor;
   const x = (1024 - width) / 2;
   const y = 548 - height / 2;
   ctx.drawImage(template, 0, 0, 1024, 1024);
@@ -55,7 +56,7 @@ const templates = import.meta.glob<string>("../upstream/folderify/src/resources/
 async function load(url: string): Promise<HTMLImageElement> {
   const image = new Image(); image.src = url; await image.decode(); return image;
 }
-export async function exportImages() {
+export async function exportImages(badgeUrl: string) {
   const badge = await load(badgeUrl);
   const images = [];
   for (const [size, name] of [[16,"16x16"],[32,"16x16@2x"],[64,"32x32@2x"],[128,"128x128"],[256,"128x128@2x"],[512,"256x256@2x"],[1024,"512x512@2x"]] as const) {
@@ -67,23 +68,26 @@ export async function exportImages() {
   return images;
 }
 
-export function Preview({ locale, onReady }: { locale: Locale; onReady: (ready: boolean) => void }) {
+export function Preview({ locale, source, badgeId, onReady }: { locale: Locale; source: string | null; badgeId: string; onReady: (id: string, ready: boolean) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   useEffect(() => {
     let active = true;
+    setStatus("loading");
+    onReady(badgeId, false);
+    if (!source) return;
     const template = new Image();
     const badge = new Image();
     template.src = templateUrl;
-    badge.src = badgeUrl;
+    badge.src = source;
     void Promise.all([template.decode(), badge.decode()]).then(() => {
       if (!active || !canvas.current) return;
       render(canvas.current, template, badge);
       setStatus("ready");
-      onReady(true);
-    }).catch(() => { if (active) { setStatus("failed"); onReady(false); } });
+      onReady(badgeId, true);
+    }).catch(() => { if (active) { setStatus("failed"); onReady(badgeId, false); } });
     return () => { active = false; };
-  }, [onReady]);
+  }, [onReady, source, badgeId]);
   return <div className="preview">
     <canvas ref={canvas} hidden={status !== "ready"} role="img" aria-label={translate(locale, "preview.description")} />
     {status !== "ready" && <p role={status === "failed" ? "alert" : "status"}>{translate(locale, `preview.${status}`)}</p>}

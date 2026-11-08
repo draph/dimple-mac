@@ -1,3 +1,4 @@
+mod assets;
 mod entry;
 mod icon;
 mod instance;
@@ -138,6 +139,9 @@ pub fn run() {
             entry::begin_edit,
             entry::set_pinned,
             entry::choose_targets,
+            entry::choose_badge,
+            entry::select_badge,
+            entry::get_badge_mask,
             entry::finder_selection,
             entry::remove_target,
             entry::prepare_operation,

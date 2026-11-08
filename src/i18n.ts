@@ -35,7 +35,8 @@ export function errorMessage(locale: Locale, error: unknown): string {
     const params = error.params as Record<string, unknown>;
     const reason = params.reason;
     if (error.code === "entry_error" && reason === "budget") return translate(locale, "error.budget");
-    const entryReasons = ["busy", "limit", "invalid", "finderInactive", "finderFailed", "finderDenied", "finderTimeout", "shortcutFailed", "checkFailed", "changed", "badgeUnavailable", "mixed", "empty"];
+    if (error.code === "asset_error" && typeof reason === "string" && ["unavailable", "type", "size", "dimensions", "damaged", "unsupported", "empty", "reference", "complexity", "timeout"].includes(reason)) return translate(locale, `asset.error.${reason}`);
+    const entryReasons = ["busy", "limit", "invalid", "finderInactive", "finderFailed", "finderDenied", "finderTimeout", "shortcutFailed", "checkFailed", "changed", "badgeUnavailable", "multipleBadges", "mixed", "empty"];
     if (error.code === "entry_error" && typeof reason === "string" && entryReasons.includes(reason)) return translate(locale, `entry.${reason}`);
     if (error.code === "operation_error" && typeof reason === "string") {
       if (["fingerprint", "write", "image", "coordination", "confirmation", "uncertain", "edit"].includes(reason)) return translate(locale, `operation.error.${reason}`);
@@ -46,6 +47,9 @@ export function errorMessage(locale: Locale, error: unknown): string {
       if (["changed"].includes(reason)) return translate(locale, "entry.changed");
       if (reason === "busy") return translate(locale, "entry.busy");
       if (reason === "check") return translate(locale, "entry.checkFailed");
+      if (reason === "mixed") return translate(locale, "entry.mixed");
+      if (reason === "multiple_badges") return translate(locale, "entry.multipleBadges");
+      if (reason === "empty") return translate(locale, "entry.empty");
       if (reason === "limit") return translate(locale, "entry.limit");
       if (["unavailable", "path", "protected", "application", "unwritable", "read_only", "budget", "type", "payload", "images", "params", "asset", "duplicate", "operation", "id"].includes(reason)) return translate(locale, `error.${reason}`);
     }

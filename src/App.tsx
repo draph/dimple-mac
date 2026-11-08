@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Session } from "./i18n";
 import { Preview, exportImages } from "./Preview";
 import "./App.css";
+import codeUrl from "./assets/code.svg";
 
 import { acceptSession, sameContext, sameDraft } from "./session";
 import type { PreparedOperation, PrepareOperation } from "./contracts";
@@ -12,7 +13,9 @@ export default function App() {
   const current = useRef<Session | null>(null);
   const epoch = useRef(0);
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
-  const [previewReady, setPreviewReady] = useState(false);
+  const [readyBadgeId, setReadyBadgeId] = useState<string | null>(null);
+  const [imported, setImported] = useState<{ id: string; url: string } | null>(null);
+  const onPreviewReady = useCallback((id: string, ready: boolean) => setReadyBadgeId(ready ? id : null), []);
   const [submitting, setSubmitting] = useState(false);
   const submitGuard = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -28,6 +31,23 @@ export default function App() {
   }, []);
   const locale = session?.locale ?? "en";
   const entry = session?.entry;
+  const badgeId = entry?.badge.id ?? "code";
+  const badgeSource = badgeId === "code" ? codeUrl : imported?.id === badgeId ? imported.url : null;
+  const previewReady = readyBadgeId === badgeId && !!badgeSource && !entry?.badgeError && !entry?.importing;
+  useEffect(() => {
+    let active = true;
+    let url: string | undefined;
+    setImported(null);
+    if (badgeId !== "code") {
+      void invoke<string>("get_badge_mask", { badgeId }).then(png => {
+        if (!active) return;
+        const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
+        url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+        setImported({ id: badgeId, url });
+      }).catch(error => { if (active) setFailure({ error }); });
+    }
+    return () => { active = false; if (url) URL.revokeObjectURL(url); };
+  }, [badgeId]);
   const operation = session?.operation;
   const t = (key: string) => translate(locale, key);
   useEffect(() => {
@@ -72,9 +92,9 @@ export default function App() {
     const draft = session;
     const targetIds = entry.items.map(item => item.id);
     try {
-      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId: "code", params: { scale: 1, offsetX: 0, offsetY: 0 }, images: await exportImages() };
+      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId, params: { scale: 1, offsetX: 0, offsetY: 0 }, images: await exportImages(badgeSource!) };
       const latest = await refreshSession(generation);
-      if (!sameDraft(draft, latest)) return;
+      if (!sameDraft(draft, latest, restore)) return;
       const p = await invoke<PreparedOperation>("prepare_operation", { request: JSON.stringify({ revision: latest!.entry.revision, targetIds, action }) });
       if (generation !== epoch.current) return;
       if (p.confirmationToken) await refreshSession(generation);
@@ -131,11 +151,18 @@ export default function App() {
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <h2 id="badge-heading">{t("badge.heading")}</h2>
-        <button disabled={busy} onClick={() => progress && command("begin_edit", { expectedEditRevision: entry!.editRevision, operationId: progress.operationId })} className="badge-choice" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
+        <div className="target-actions">
+          <button disabled={busy} onClick={() => command("select_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null, badgeId: "code" })} className="badge-choice" aria-pressed={badgeId === "code"}><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
+          <button disabled={busy} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
+        </div>
+        {badgeId !== "code" && <p className="muted">{t("badge.imported")}</p>}
+        {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
+        {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
+        {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
       </section>
       <section aria-labelledby="preview-heading">
         <h2 id="preview-heading">{t("preview.heading")}</h2>
-        <Preview locale={locale} onReady={setPreviewReady} />
+        <Preview locale={locale} source={badgeSource} badgeId={badgeId} onReady={onPreviewReady} />
       </section>
       {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
       {progress && <section className="card" aria-live="polite" aria-atomic="true">
