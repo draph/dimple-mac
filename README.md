@@ -42,6 +42,8 @@ The app does not elevate privileges. Each target must be a writable folder; syst
 
 When Finder is not the active app, use manual selection. Manually selected targets remain when you reopen the panel; **Use Finder Selection** explicitly replaces them. The target summary and expandable list show what will be changed, and individual folders can be removed before applying.
 
+Finder selection is read automatically only when a hidden panel opens without manual targets or an unfinished operation. Failed automatic reads clear old automatic targets, so an old selection cannot be applied accidentally. Invalid dropped or selected items are reported individually. Entirely invalid input, more than 100 valid folders, mixed folders and badges, or multiple badges preserve the previous targets and badge.
+
 Once all targets succeed, they are released after the success message. The panel hides unless pinned; **Esc** hides an idle panel, and hiding does not quit the app. Use the menu bar to quit or open settings. The global shortcut can be changed or disabled in settings.
 
 ### Badges and adjustments

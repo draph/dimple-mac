@@ -16,6 +16,10 @@ pub struct Snapshot {
     text_count: Option<usize>,
     text_pending: bool,
     #[serde(skip)]
+    text_request: u64,
+    #[serde(skip)]
+    native_importing: bool,
+    #[serde(skip)]
     mask: Option<std::sync::Arc<crate::assets::Mask>>,
     revision: u64,
     edit_revision: u64,
@@ -198,12 +202,19 @@ pub fn error<R: tauri::Runtime>(app: &tauri::AppHandle<R>, code: &str) {
     update(app, |s| s.error = Some(code.into()));
 }
 pub fn receive<R: tauri::Runtime>(app: &tauri::AppHandle<R>, source: &str, paths: Vec<PathBuf>) {
+    receive_native(app, source, paths.into_iter().map(Ok).collect());
+}
+pub fn receive_native<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    source: &str,
+    paths: Vec<Result<PathBuf, AppError>>,
+) {
     receive_paths(app, source, paths, false);
 }
 fn receive_paths<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     source: &str,
-    paths: Vec<PathBuf>,
+    paths: Vec<Result<PathBuf, AppError>>,
     from_picker: bool,
 ) {
     let app = app.clone();
@@ -214,7 +225,7 @@ fn receive_paths<R: tauri::Runtime>(
         show(&app);
         if s.operation_locked()
             || (s.choosing && !from_picker)
-            || (s.checking && !s.importing)
+            || (s.checking && !s.native_importing)
             || s.preparing
         {
             drop(s);
@@ -222,24 +233,68 @@ fn receive_paths<R: tauri::Runtime>(
             return;
         }
         s.choosing = false;
-        cancel_text(&mut s);
         invalidate_read(&mut s);
         s.checking = true;
-        s.importing = paths.len() == 1
+        s.native_importing = paths.len() == 1
             && paths[0]
-                .extension()
+                .as_ref()
+                .ok()
+                .and_then(|p| p.extension())
                 .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"));
+        s.importing = s.native_importing || s.text_pending;
         s.request += 1;
         let revision = s.request;
         commit_update(&app, s);
         revision
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let checked = check_native_paths_current(paths, || {
+        let checked = check_input_current(paths, || {
             app.state::<Inbox>().0.lock().unwrap().request == revision
         });
         update(&app, |s| finish_native_input(s, revision, &source, checked));
     });
+}
+fn check_input_current(
+    input: Vec<Result<PathBuf, AppError>>,
+    current: impl Fn() -> bool,
+) -> Result<Vec<InputItem>, AppError> {
+    if input.len() > 4096 {
+        return Err(AppError::reason("invalid_input", "budget"));
+    }
+    let mut paths = Vec::new();
+    let mut issues = Vec::new();
+    for item in input {
+        match item {
+            Ok(path) => paths.push(path),
+            Err(error)
+                if error
+                    .params
+                    .get("reason")
+                    .is_some_and(|reason| reason == "budget") =>
+            {
+                return Err(error);
+            }
+            Err(error) => issues.push(InputItem {
+                kind: "invalid",
+                error: Some(error),
+                ..Default::default()
+            }),
+        }
+    }
+    if paths.is_empty() && !issues.is_empty() {
+        return Ok(issues);
+    }
+    let mut items = match check_native_paths_current(paths, current) {
+        Err(error) if !issues.is_empty() && error.code == "asset_error" => {
+            return Err(AppError::reason("invalid_input", "mixed"));
+        }
+        result => result?,
+    };
+    if !issues.is_empty() && items.iter().any(|item| item.kind == "badge") {
+        return Err(AppError::reason("invalid_input", "mixed"));
+    }
+    items.extend(issues);
+    Ok(items)
 }
 fn finish_native_input(
     s: &mut Snapshot,
@@ -254,14 +309,16 @@ fn finish_native_input(
         Ok(items) => finish_input(s, request, source, Ok(items)),
         Err(e) => {
             let import_failed = e.code == "asset_error"
-                || (s.importing
+                || (s.native_importing
                     && !matches!(
                         e.params.get("reason").and_then(|v| v.as_str()),
-                        Some("mixed" | "multiple_badges")
+                        Some("mixed" | "multiple_badges" | "limit" | "budget")
                     ));
             s.checking = false;
-            s.importing = false;
+            s.native_importing = false;
+            s.importing = s.text_pending;
             if import_failed {
+                cancel_text(s);
                 s.badge_error = Some(if e.code == "asset_error" {
                     e
                 } else {
@@ -290,7 +347,8 @@ fn finish_input(
         return;
     }
     s.checking = false;
-    s.importing = false;
+    s.native_importing = false;
+    s.importing = s.text_pending;
     match checked {
         Ok(items) => accept(s, source, items),
         Err(code) => s.error = Some(code.into()),
@@ -388,8 +446,10 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
         if items.len() == 1 {
             let item = items.into_iter().next().unwrap();
             if let Some(error) = item.error {
+                cancel_text(s);
                 s.badge_error = Some(error);
             } else if let Some(mask) = item.mask {
+                cancel_text(s);
                 s.badge = Badge {
                     id: targets::next_id("badge"),
                     width: mask.width,
@@ -439,6 +499,9 @@ pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 pub fn wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    wake_from(app, crate::macos::finder_is_frontmost());
+}
+pub fn wake_from<R: tauri::Runtime>(app: &tauri::AppHandle<R>, finder: bool) {
     let hidden = app
         .get_webview_window("main")
         .is_some_and(|w| !w.is_visible().unwrap_or(true));
@@ -454,7 +517,6 @@ pub fn wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         }
         (plan.0, expected_request)
     };
-    let finder = crate::macos::finder_is_frontmost();
     show(app);
     if automatic {
         if finder {
@@ -530,7 +592,12 @@ pub fn choose_targets<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
         if let Some(files) = files {
             let paths = files
                 .into_iter()
-                .filter_map(|f| f.into_path().ok())
+                .enumerate()
+                .map(|(index, f)| {
+                    f.into_path().map_err(|_| {
+                        AppError::reason("invalid_input", "file_url").param("index", index + 1)
+                    })
+                })
                 .collect();
             receive_paths(&app, "picker", paths, true);
         } else {
@@ -557,7 +624,7 @@ pub fn choose_badge<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
         .pick_file(move |file| {
             if let Some(file) = file {
                 match file.into_path() {
-                    Ok(path) => receive_paths(&app, "badge-picker", vec![path], true),
+                    Ok(path) => receive_paths(&app, "badge-picker", vec![Ok(path)], true),
                     Err(_) => update(&app, |s| {
                         s.choosing = false;
                         s.importing = false;
@@ -627,8 +694,9 @@ pub fn select_badge<R: tauri::Runtime>(
 fn cancel_text(s: &mut Snapshot) {
     if s.text_pending {
         s.text_pending = false;
-        s.importing = false;
+        s.importing = s.native_importing;
         s.badge_error = Some(AppError::reason("text_error", "render"));
+        s.text_request += 1;
         s.request += 1;
     }
 }
@@ -671,14 +739,15 @@ fn start_text(
     s.badge_error = validation.err();
     s.text_pending = s.badge_error.is_none();
     s.importing = s.text_pending;
-    Ok(s.request)
+    s.text_request += 1;
+    Ok(s.text_request)
 }
 
 fn finish_text(s: &mut Snapshot, request: u64, result: Result<targets::Checked, AppError>) {
-    if s.request != request || !s.text_pending {
+    if s.text_request != request || !s.text_pending {
         return;
     }
-    s.importing = false;
+    s.importing = s.native_importing;
     s.text_pending = false;
     match result.and_then(|r| {
         r.mask
@@ -745,7 +814,7 @@ pub fn set_text_badge<R: tauri::Runtime>(
     tauri::async_runtime::spawn_blocking(move || {
         std::thread::sleep(std::time::Duration::from_millis(250));
         let result = targets::check_cancellable(targets::Request::Text(text), || {
-            app.state::<Inbox>().0.lock().unwrap().request == request
+            app.state::<Inbox>().0.lock().unwrap().text_request == request
         });
         update(&app, |s| finish_text(s, request, result));
     });
@@ -2008,6 +2077,186 @@ mod tests {
         assert!(released["operation"]["progress"].is_null());
         assert!(released["operation"]["prepared"].is_null());
         assert_eq!(released["entry"]["pinned"], true);
+
+        // Every native target source reaches the same registered-ID write path.
+        std::fs::write(temp.0.join("body.txt"), b"unchanged body").unwrap();
+        for source in [
+            "tray-drop",
+            "service",
+            "window-drop",
+            "picker",
+            "finder",
+            "finder-auto",
+        ] {
+            super::receive(app.handle(), source, vec![temp.0.clone()]);
+            for _ in 0..1000 {
+                if entry()["checking"] == false {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert_eq!(entry()["source"], source);
+            let p = apply();
+            assert!(p["confirmationToken"].is_null());
+            ipc(
+                "commit_operation",
+                json!({"operationId":p["operationId"],"confirmationToken":null}),
+            )
+            .unwrap();
+            assert_eq!(wait()["progress"]["items"][0]["status"], "succeeded");
+            assert!(crate::icon::fingerprint(&temp.0).unwrap().custom);
+            let e = entry();
+            ipc("begin_edit", json!({"expectedEditRevision": e["editRevision"], "operationId": op()["progress"]["operationId"]})).unwrap();
+            let p = prepare(json!({"type":"restore"})).unwrap();
+            ipc(
+                "commit_operation",
+                json!({"operationId":p["operationId"],"confirmationToken":p["confirmationToken"]}),
+            )
+            .unwrap();
+            assert_eq!(wait()["progress"]["items"][0]["status"], "succeeded");
+            assert!(!crate::icon::fingerprint(&temp.0).unwrap().custom);
+            assert_eq!(
+                std::fs::read(temp.0.join("body.txt")).unwrap(),
+                b"unchanged body"
+            );
+        }
+    }
+
+    #[test]
+    fn rejected_native_candidates_allow_pending_text_to_finish() {
+        use tauri::Manager;
+        let root = std::env::temp_dir().join(crate::targets::next_id("pending-text"));
+        std::fs::create_dir(&root).unwrap();
+        let many: Vec<_> = (0..101)
+            .map(|i| {
+                let path = root.join(i.to_string());
+                std::fs::create_dir(&path).unwrap();
+                Ok(path)
+            })
+            .collect();
+        let badge = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/assets/code.svg");
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let rejected = [
+            vec![Err(crate::localization::AppError::reason(
+                "invalid_input",
+                "file_url",
+            )
+            .param("index", 1))],
+            vec![Ok(root.join("missing"))],
+            vec![Ok(root.clone()), Ok(badge.clone())],
+            many,
+            vec![Err(crate::localization::AppError::reason(
+                "invalid_input",
+                "budget",
+            ))],
+        ];
+        for input in rejected {
+            let mut s = targets();
+            let text_request = super::start_text(&mut s, "中文".into(), 0, None).unwrap();
+            let version = s.edit_revision;
+            *app.state::<super::Inbox>().0.lock().unwrap() = s;
+            super::receive_native(app.handle(), "service", input);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if !super::get_entry(app.handle().clone()).checking {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            let inbox = app.state::<super::Inbox>();
+            let mut s = inbox.0.lock().unwrap();
+            assert!(s.text_pending && s.importing);
+            assert!(s.badge_error.is_none());
+            assert_eq!(s.edit_revision, version);
+            super::finish_text(
+                &mut s,
+                text_request,
+                Ok(crate::targets::Checked {
+                    mask: Some(imported_mask()),
+                    ..Default::default()
+                }),
+            );
+            assert!(!s.text_pending && !s.importing);
+            assert!(s.badge_error.is_none());
+            assert_eq!(s.badge.text.as_deref(), Some("中文"));
+        }
+        let mut s = targets();
+        let text_request = super::start_text(&mut s, "AB".into(), 0, None).unwrap();
+        s.checking = true;
+        s.native_importing = true;
+        s.request += 1;
+        super::finish_text(
+            &mut s,
+            text_request,
+            Ok(crate::targets::Checked {
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }),
+        );
+        assert!(s.checking && s.importing);
+        let request = s.request;
+        super::finish_native_input(
+            &mut s,
+            request,
+            "tray-drop",
+            Ok(vec![super::InputItem {
+                kind: "badge",
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }]),
+        );
+        assert!(!s.checking && !s.importing);
+        assert!(s.badge.text.is_none());
+        let mut s = targets();
+        super::start_text(&mut s, "AB".into(), 0, None).unwrap();
+        s.checking = true;
+        s.request += 1;
+        let request = s.request;
+        *app.state::<super::Inbox>().0.lock().unwrap() = s;
+        super::receive_native(app.handle(), "service", vec![Ok(root.clone())]);
+        let s = super::get_entry(app.handle().clone());
+        assert_eq!(s.request, request);
+        assert!(s.checking && s.text_pending);
+        assert_eq!(s.error.unwrap().params["reason"], "busy");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_parse_issues_preserve_valid_targets_and_reject_mixed_badges() {
+        let root = std::env::temp_dir().join(crate::targets::next_id("native-input"));
+        std::fs::create_dir(&root).unwrap();
+        let invalid = || {
+            Err(
+                crate::localization::AppError::reason("invalid_input", "file_url")
+                    .param("index", 2),
+            )
+        };
+        let input = super::check_input_current(vec![Ok(root.clone()), invalid()], || true).unwrap();
+        let mut s = targets();
+        super::accept(&mut s, "service", input);
+        assert_eq!(s.items.len(), 1);
+        assert_eq!(s.issues.len(), 1);
+        assert_eq!(s.issues[0].error.as_ref().unwrap().params["index"], 2);
+        let before = serde_json::to_value(&s.items).unwrap();
+        let revision = s.edit_revision;
+        let input = super::check_input_current(vec![invalid()], || true).unwrap();
+        super::accept(&mut s, "service", input);
+        assert_eq!(serde_json::to_value(&s.items).unwrap(), before);
+        assert_eq!(s.edit_revision, revision);
+        let badge = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/assets/code.svg");
+        let error = super::check_input_current(vec![Ok(badge), invalid()], || true)
+            .err()
+            .unwrap();
+        assert_eq!(error.params["reason"], "mixed");
+        let error = super::check_input_current((0..4097).map(|_| invalid()).collect(), || true)
+            .err()
+            .unwrap();
+        assert_eq!(error.params["reason"], "budget");
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn removal_preserves_order_and_becomes_manual_editing() {

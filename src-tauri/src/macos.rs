@@ -10,20 +10,53 @@ pub fn finder_is_frontmost() -> bool {
         .and_then(|a| a.bundleIdentifier())
         .is_some_and(|s| s.to_string() == "com.apple.finder")
 }
-fn paths(board: &NSPasteboard) -> Vec<PathBuf> {
+fn file_path(
+    value: Option<&NSString>,
+    index: usize,
+) -> Result<PathBuf, crate::localization::AppError> {
+    if value.is_some_and(|value| value.len() > 1024 * 1024) {
+        return Err(crate::localization::AppError::reason(
+            "invalid_input",
+            "budget",
+        ));
+    }
+    value
+        .and_then(NSURL::URLWithString)
+        .filter(|url| {
+            url.isFileURL()
+                && url
+                    .host()
+                    .is_none_or(|host| host.is_empty() || host.to_string() == "localhost")
+        })
+        .and_then(|url| url.path())
+        .map(|path| PathBuf::from(path.to_string()))
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| {
+            crate::localization::AppError::reason("invalid_input", "file_url")
+                .param("index", index + 1)
+        })
+}
+fn paths(board: &NSPasteboard) -> Vec<Result<PathBuf, crate::localization::AppError>> {
     // Finder supplies file URLs; never split or trim decoded filesystem paths.
     let mut paths = Vec::new();
     if let Some(items) = board.pasteboardItems() {
-        for item in items {
-            if let Some(value) = item.stringForType(&NSString::from_str("public.file-url"))
-                && let Some(url) = NSURL::URLWithString(&value)
-                && url.isFileURL()
-                && let Some(path) = url.path()
-            {
-                paths.push(PathBuf::from(path.to_string()));
-            } else {
-                return Vec::new();
+        if items.len() > 4096 {
+            return vec![Err(crate::localization::AppError::reason(
+                "invalid_input",
+                "budget",
+            ))];
+        }
+        let mut length = 0usize;
+        for (index, item) in items.iter().enumerate() {
+            let value = item.stringForType(&NSString::from_str("public.file-url"));
+            length = length.saturating_add(value.as_ref().map_or(0, |value| value.len()));
+            if length > 1024 * 1024 {
+                return vec![Err(crate::localization::AppError::reason(
+                    "invalid_input",
+                    "budget",
+                ))];
             }
+            paths.push(file_path(value.as_deref(), index));
         }
     }
     paths
@@ -35,7 +68,7 @@ define_class!(
     impl Service {
         #[unsafe(method(folderify:userData:error:))]
         fn serve(&self, board: &NSPasteboard, _data: Option<&NSString>, _error: *mut *mut NSString) {
-            if let Some(app) = APP.get() { crate::entry::receive(app, "service", paths(board)); }
+            if let Some(app) = APP.get() { crate::entry::receive_native(app, "service", paths(board)); }
         }
     }
 );
@@ -52,7 +85,7 @@ define_class!(
         fn perform(&self, sender: &AnyObject) -> bool {
             // SAFETY: AppKit supplies an NSDraggingInfo object for this selector.
             let board: objc2::rc::Retained<NSPasteboard> = unsafe { msg_send![sender, draggingPasteboard] };
-            if let Some(app) = APP.get() { crate::entry::receive(app, "tray-drop", paths(&board)); }
+            if let Some(app) = APP.get() { crate::entry::receive_native(app, "tray-drop", paths(&board)); }
             true
         }
     }
@@ -80,4 +113,29 @@ pub fn install(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> tauri::R
             button.addSubview(&view);
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_file_urls_preserve_paths_and_report_each_invalid_item() {
+        objc2::rc::autoreleasepool(|_| {
+            let path = "/tmp/ 中文\nquote\"\\ space ";
+            let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+            let value = url.absoluteString().unwrap();
+            assert_eq!(file_path(Some(&value), 0).unwrap(), PathBuf::from(path));
+            for value in [
+                None,
+                Some(NSString::from_str("https://example.com/file")),
+                Some(NSString::from_str("file://remote.example/tmp/folder")),
+                Some(NSString::from_str("not a file URL")),
+            ] {
+                let error = file_path(value.as_deref(), 2).unwrap_err();
+                assert_eq!(error.params["reason"], "file_url");
+                assert_eq!(error.params["index"], 3);
+            }
+        });
+    }
 }

@@ -13,6 +13,20 @@ mod text;
 use localization::Locale;
 use tauri::{Emitter, Manager};
 
+#[derive(Default)]
+struct TrayWake(std::sync::Mutex<Option<bool>>);
+
+fn wake_from_tray(app: &tauri::AppHandle) {
+    let finder = app
+        .state::<TrayWake>()
+        .0
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap_or_else(macos::finder_is_frontmost);
+    entry::wake_from(app, finder);
+}
+
 #[derive(Clone, serde::Serialize)]
 struct Session {
     version: &'static str,
@@ -75,6 +89,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .manage(entry::Inbox::default())
+        .manage(TrayWake::default())
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
@@ -120,19 +135,29 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| {
                     if e.id.as_ref() == "show" {
-                        entry::wake(app);
+                        wake_from_tray(app);
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if matches!(
-                        event,
-                        tauri::tray::TrayIconEvent::Click {
-                            button: tauri::tray::MouseButton::Left,
-                            button_state: tauri::tray::MouseButtonState::Up,
-                            ..
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button,
+                        button_state,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        match button_state {
+                            tauri::tray::MouseButtonState::Down => {
+                                *app.state::<TrayWake>().0.lock().unwrap() =
+                                    Some(macos::finder_is_frontmost());
+                            }
+                            tauri::tray::MouseButtonState::Up
+                                if button == tauri::tray::MouseButton::Left =>
+                            {
+                                wake_from_tray(app)
+                            }
+                            _ => {}
                         }
-                    ) {
-                        entry::wake(tray.app_handle());
                     }
                 })
                 .build(app)?;

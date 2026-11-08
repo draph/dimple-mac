@@ -45,6 +45,7 @@ export function errorMessage(locale: Locale, error: unknown): string {
       if (reason === "operation") return translate(locale, "error.operation");
     }
     if (["invalid_input", "permission_denied", "target_changed", "busy", "timeout"].includes(String(error.code)) && typeof reason === "string") {
+      if (reason === "file_url" && typeof params.index === "number" && Number.isSafeInteger(params.index) && params.index > 0) return translate(locale, "error.fileUrl", {index: params.index});
       if (["changed"].includes(reason)) return translate(locale, "entry.changed");
       if (reason === "busy") return translate(locale, "entry.busy");
       if (reason === "check") return translate(locale, "entry.checkFailed");

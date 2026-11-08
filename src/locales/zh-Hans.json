@@ -72,6 +72,7 @@
   "entry.invalidItems": "未接受的项目",
   "entry.mixed": "请分别导入目录和徽标，原目标已保留。",
   "error.unavailable": "此项目不存在或无法访问。",
+  "error.fileUrl": "第 {index} 项没有有效的本地文件地址。请重新选择或拖入文件。",
   "error.path": "此路径无法使用。",
   "error.protected": "不能修改受保护的系统目录。",
   "error.application": "不能将应用包用作目标目录。",

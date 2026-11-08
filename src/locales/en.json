@@ -72,6 +72,7 @@
   "entry.invalidItems": "Items that could not be accepted",
   "entry.mixed": "Import folders and badges separately. Your targets were kept.",
   "error.unavailable": "This item is missing or cannot be accessed.",
+  "error.fileUrl": "Item {index} does not contain a valid local file URL. Select or drag the file again.",
   "error.path": "This path cannot be used.",
   "error.protected": "Protected system folders cannot be changed.",
   "error.application": "Application bundles cannot be used as target folders.",
