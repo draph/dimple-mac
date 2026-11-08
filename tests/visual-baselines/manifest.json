@@ -1,0 +1,771 @@
+{
+  "template": {
+    "id": "big-sur-light-blue",
+    "asset": "upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset",
+    "upstreamCommit": "16de35dd0ee94be4eae046dde709949b5d779e48"
+  },
+  "environment": {
+    "macOS": "26.6.2 (25G83)",
+    "browser": "Safari 26.6.2 / WebKit 605.1.15",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+    "platform": "MacIntel",
+    "devicePixelRatio": 2
+  },
+  "parameters": {
+    "scale": 1,
+    "offsetX": 0,
+    "offsetY": 0
+  },
+  "themes": {
+    "native": "native",
+    "#EF4444": "red",
+    "#F97316": "orange",
+    "#EAB308": "yellow",
+    "#22C55E": "green",
+    "#A855F7": "purple",
+    "#808080": "gray"
+  },
+  "sizes": [
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024
+  ],
+  "engravingOffsetsPx": {
+    "16": 0.5,
+    "32": 0.5,
+    "64": 0.75,
+    "128": 1,
+    "256": 1.5,
+    "512": 2,
+    "1024": 3
+  },
+  "icnsTypes": [
+    {
+      "type": "ic04",
+      "pixels": 16
+    },
+    {
+      "type": "ic11",
+      "pixels": 32
+    },
+    {
+      "type": "ic05",
+      "pixels": 32
+    },
+    {
+      "type": "ic12",
+      "pixels": 64
+    },
+    {
+      "type": "ic07",
+      "pixels": 128
+    },
+    {
+      "type": "ic13",
+      "pixels": 256
+    },
+    {
+      "type": "ic08",
+      "pixels": 256
+    },
+    {
+      "type": "ic14",
+      "pixels": 512
+    },
+    {
+      "type": "ic09",
+      "pixels": 512
+    },
+    {
+      "type": "ic10",
+      "pixels": 1024
+    }
+  ],
+  "pixelThresholds": {
+    "16": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    },
+    "32": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    },
+    "64": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    },
+    "128": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    },
+    "256": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    },
+    "512": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    },
+    "1024": {
+      "metric": "RGBA per-pixel channel delta",
+      "maxChannelDelta": 0,
+      "differentPixels": 0
+    }
+  },
+  "inputs": [
+    {
+      "sample": "svg",
+      "file": "tests/fixtures/badges/geometric-cross.svg",
+      "sha256": "2dac48454e9ef89bb0c1791024cabb188562ec3861ef20f3129b88ca332abb83"
+    },
+    {
+      "sample": "png",
+      "file": "tests/fixtures/badges/t14-asymmetric.png",
+      "sha256": "8d8b81dd90d2052b8aef1fd16038a358259d64e4a0c4a1d7a4879a92d6e7c82a"
+    },
+    {
+      "sample": "builtin",
+      "file": "src/assets/code.svg",
+      "sha256": "481269e14df833ccd65b643f79c27735d14bf65d285467476e3d7491477dac13"
+    },
+    {
+      "sample": "text",
+      "file": "tests/fixtures/badges/t14-text-f.png",
+      "sha256": "8b045f5807cfebb07dd1f9140270afe7607f535a5e6ba602066410c737d4eb99"
+    }
+  ],
+  "images": [
+    {
+      "file": "svg-native-16.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 16,
+      "sha256": "773794337888e8b0a92c8d860c40949b77734549aed16805e7fc006b05cb932c",
+      "bytes": 721
+    },
+    {
+      "file": "svg-native-32.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 32,
+      "sha256": "f68b3b3a1e87166689a6fe0e4b22521070115990e2d138f0331fda486ed797ec",
+      "bytes": 1578
+    },
+    {
+      "file": "svg-native-64.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 64,
+      "sha256": "9fafb6f9619dec36e1dfb658d82776298b07acc067f3d8f0998ea9330812a65f",
+      "bytes": 5991
+    },
+    {
+      "file": "svg-native-128.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 128,
+      "sha256": "9f842be728456f29b4c1d1180197ad696bc1547be737e11182238fddd088dfb3",
+      "bytes": 20762
+    },
+    {
+      "file": "svg-native-256.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 256,
+      "sha256": "362c8e39af7accaf8719e8000ff360890ea9c80b1d7fd641d8797b28b8e51032",
+      "bytes": 76697
+    },
+    {
+      "file": "svg-native-512.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 512,
+      "sha256": "1faeabd22712170812b4cc849fa7b52c7e91fd27f8e3efd0e308fcdeb8a23431",
+      "bytes": 261001
+    },
+    {
+      "file": "svg-native-1024.png",
+      "sample": "svg",
+      "theme": "native",
+      "size": 1024,
+      "sha256": "4f1a813c86b74ed46d14776cc5d3e3775763fdfa602358aa6e75f9e9a06cb9dd",
+      "bytes": 811581
+    },
+    {
+      "file": "png-native-16.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 16,
+      "sha256": "ab71c596e9419519e10f068086fb6844c206c717966f361747f79203c6a4f0e2",
+      "bytes": 742
+    },
+    {
+      "file": "png-native-32.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 32,
+      "sha256": "67cc5704d63fbe3b26dbebd53f132b67058ec66195c8bdffb367a5b842b24c7c",
+      "bytes": 1680
+    },
+    {
+      "file": "png-native-64.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 64,
+      "sha256": "b9b45d5209faf243f3bc53bf870ea7973e3e243a361634a3c7cb6582913d660a",
+      "bytes": 6166
+    },
+    {
+      "file": "png-native-128.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 128,
+      "sha256": "bc6861559d73d99c6d43f2df705b9f9967efb0ab191d4ce14c2588190cf348ef",
+      "bytes": 21612
+    },
+    {
+      "file": "png-native-256.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 256,
+      "sha256": "3a89f609df77a79d522d314cbc62e87986105d7b568614b00caa504feece1be4",
+      "bytes": 79151
+    },
+    {
+      "file": "png-native-512.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 512,
+      "sha256": "890b532fcc19cbddec480d76ed219ea8005e8d75134ac8bd5d04ba06228d910b",
+      "bytes": 269206
+    },
+    {
+      "file": "png-native-1024.png",
+      "sample": "png",
+      "theme": "native",
+      "size": 1024,
+      "sha256": "efbc58256ade6948f31e5b111b9710a5976b56864075334a3b4ddc19d7a45f99",
+      "bytes": 826098
+    },
+    {
+      "file": "builtin-native-16.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 16,
+      "sha256": "d15e0cba0789115ae0308a9933f391d783be27ff61910c39cf1f2b1b72b892df",
+      "bytes": 736
+    },
+    {
+      "file": "builtin-native-32.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 32,
+      "sha256": "2469773c1f16f79b76441ab0970ac11222f8d5b5ff661fc646c5916889ebe847",
+      "bytes": 1676
+    },
+    {
+      "file": "builtin-native-64.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 64,
+      "sha256": "f7eb0ed1d580d8e77bf30c52b2c9e8e0da558fd77dce56544ace7e153c36b3ef",
+      "bytes": 6209
+    },
+    {
+      "file": "builtin-native-128.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 128,
+      "sha256": "1cf76f97d61ff222347b87c7ce0aa263a2e73167c4820f803e3791896f5ee88a",
+      "bytes": 21616
+    },
+    {
+      "file": "builtin-native-256.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 256,
+      "sha256": "a65b6065c4b7b823a23d71e8e968564153d42c887d7e2d7a016292aa7d222c83",
+      "bytes": 79417
+    },
+    {
+      "file": "builtin-native-512.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 512,
+      "sha256": "bf806108671ef8b1145761d02a60363ca231cf0ff7efb8f7a5e233c8e19628e1",
+      "bytes": 270585
+    },
+    {
+      "file": "builtin-native-1024.png",
+      "sample": "builtin",
+      "theme": "native",
+      "size": 1024,
+      "sha256": "597a8ed834eec8d72b6dab969b6f7d6c7c8ec43ec933ef152b6a60996ee26d45",
+      "bytes": 822585
+    },
+    {
+      "file": "builtin-red-16.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 16,
+      "sha256": "9ccdda18236876570c2f52b44b423f5abbd9b777d20e1f0f76fc237bfe0f9a69",
+      "bytes": 677
+    },
+    {
+      "file": "builtin-red-32.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 32,
+      "sha256": "4c06a5c6eaef6a0765620c7d3e888609add3de20bc9d6e211df91dc9f2a60b3b",
+      "bytes": 1543
+    },
+    {
+      "file": "builtin-red-64.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 64,
+      "sha256": "4fa7af56ab391d15230e76ec3eb70ae83eefdd2f194ccbf6104745d484abc791",
+      "bytes": 4924
+    },
+    {
+      "file": "builtin-red-128.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 128,
+      "sha256": "f6eefa7f4414323666efa5bfbc5c9f7d662d6438374167354c2e49452f5693c6",
+      "bytes": 16896
+    },
+    {
+      "file": "builtin-red-256.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 256,
+      "sha256": "855671424ed0a8f060acf2cc0fcadb73e21cedefd3a9038ddcaa3ebe2bccaf56",
+      "bytes": 60182
+    },
+    {
+      "file": "builtin-red-512.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 512,
+      "sha256": "461ab4ecac21789cf768eb98e3e68cdb0f3e6858ded3be00ee401213ddd78c99",
+      "bytes": 204326
+    },
+    {
+      "file": "builtin-red-1024.png",
+      "sample": "builtin",
+      "theme": "#EF4444",
+      "size": 1024,
+      "sha256": "f75321f5e7dccafc6217432a21a69a86c4d2d3505216858106be7518eb503373",
+      "bytes": 622298
+    },
+    {
+      "file": "builtin-orange-16.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 16,
+      "sha256": "27b3280031127280c31f43d7a7ba12afdbeadbefd4f81f24fa36c27f26cde348",
+      "bytes": 695
+    },
+    {
+      "file": "builtin-orange-32.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 32,
+      "sha256": "973b43244cf23d4ca595ffbf928bef57448d5fea35ada458d9ab752c67c575e6",
+      "bytes": 1592
+    },
+    {
+      "file": "builtin-orange-64.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 64,
+      "sha256": "cb9d78e8a7420376dcf4137db4f69540c5492b6a3b1a03ee524326c93c5beecc",
+      "bytes": 5338
+    },
+    {
+      "file": "builtin-orange-128.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 128,
+      "sha256": "a1d436719d5c09a3334ce8bb2a37a1b120b61c576dfcb3e6720d6b3b782c2183",
+      "bytes": 18423
+    },
+    {
+      "file": "builtin-orange-256.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 256,
+      "sha256": "2f2eb8757052f88c1b9f4ba35bc636fd5949bc8f768a77ee387556f658bb1985",
+      "bytes": 66407
+    },
+    {
+      "file": "builtin-orange-512.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 512,
+      "sha256": "86b49e954bf51da6840469d8f2aad841ae1264e77211c179352ba0a727241ea7",
+      "bytes": 233985
+    },
+    {
+      "file": "builtin-orange-1024.png",
+      "sample": "builtin",
+      "theme": "#F97316",
+      "size": 1024,
+      "sha256": "14f720969cfe5f3fecaebd555c22a1b6e57b63de6f839894ac7df3781eea522e",
+      "bytes": 727116
+    },
+    {
+      "file": "builtin-yellow-16.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 16,
+      "sha256": "b5096dd31441b4565a50f2dda5981739e048aaaed2bd0c339d34657ef1d66cc9",
+      "bytes": 687
+    },
+    {
+      "file": "builtin-yellow-32.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 32,
+      "sha256": "4ee1e27704fa2197adecd0fee1004dc6320e936a7ce81c6f350ef52073623c1b",
+      "bytes": 1604
+    },
+    {
+      "file": "builtin-yellow-64.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 64,
+      "sha256": "b1406d460085dfa6d905e963182304d21950db525319894c755f394b49a5b632",
+      "bytes": 5319
+    },
+    {
+      "file": "builtin-yellow-128.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 128,
+      "sha256": "6603612827afb4f6719933900fc49e8391612b405cd0793902000b2e522014fc",
+      "bytes": 18287
+    },
+    {
+      "file": "builtin-yellow-256.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 256,
+      "sha256": "eaf31d6d1ee3a03a767fd64ad964972c1c1b1e272d5522d315dbb9b0604518c8",
+      "bytes": 65866
+    },
+    {
+      "file": "builtin-yellow-512.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 512,
+      "sha256": "cfb2cc37372b50d5b49d1ed588675b44c7d435a3f0b3ef5ae7096f5ea1969aa1",
+      "bytes": 226201
+    },
+    {
+      "file": "builtin-yellow-1024.png",
+      "sample": "builtin",
+      "theme": "#EAB308",
+      "size": 1024,
+      "sha256": "b45fc50223da5de365bae747584b8d43751863560950d77b17340a30243d7b6e",
+      "bytes": 697465
+    },
+    {
+      "file": "builtin-green-16.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 16,
+      "sha256": "75d80e474dd8065fd42e79e4425d9a4e635823c01bec45816fb5f8c35c55ba39",
+      "bytes": 709
+    },
+    {
+      "file": "builtin-green-32.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 32,
+      "sha256": "3c5382fb19f2856df29776dc564d52c5ffa76ad3b55e423fac67edbb4c147fd5",
+      "bytes": 1619
+    },
+    {
+      "file": "builtin-green-64.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 64,
+      "sha256": "9f3b21b11be4e7d1b285b53c02d365cf3a5159ea2aa2ad1f50dab7ec9c2c2ae8",
+      "bytes": 5318
+    },
+    {
+      "file": "builtin-green-128.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 128,
+      "sha256": "587c15a285cee87f90992c2377a0157317bf3bb79570277532280ba0d7c3229b",
+      "bytes": 18105
+    },
+    {
+      "file": "builtin-green-256.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 256,
+      "sha256": "793403651df6b4aa116efba54477fdc7d16c4ec539bf8106f802738c92f4c881",
+      "bytes": 65864
+    },
+    {
+      "file": "builtin-green-512.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 512,
+      "sha256": "9a41ef8b2ef16e74ba7c71447c565f3239a9baf7659a0b50c0c8a92ed91cd914",
+      "bytes": 236643
+    },
+    {
+      "file": "builtin-green-1024.png",
+      "sample": "builtin",
+      "theme": "#22C55E",
+      "size": 1024,
+      "sha256": "35bac44927e072e584da4056be4692fbff8c1163089523f122fc1a3399884fb1",
+      "bytes": 744436
+    },
+    {
+      "file": "builtin-purple-16.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 16,
+      "sha256": "cf11da36b9563fe698870b8152b69046c7be34863c3facf2c457f78a317ca733",
+      "bytes": 691
+    },
+    {
+      "file": "builtin-purple-32.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 32,
+      "sha256": "39be9fa717209a40936e0a50736899b0245f7538b3268d863d3b058bba2788a6",
+      "bytes": 1612
+    },
+    {
+      "file": "builtin-purple-64.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 64,
+      "sha256": "1770132917e0ab9458b5b787ab30d1b7e89b55fa745e238bc8a5ee05c4684a51",
+      "bytes": 5384
+    },
+    {
+      "file": "builtin-purple-128.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 128,
+      "sha256": "6ea6a6e463034f70ccf9849736d86ecdb3888730274fd2e3e4ac258c600bfcf6",
+      "bytes": 18484
+    },
+    {
+      "file": "builtin-purple-256.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 256,
+      "sha256": "7884de3cc5c7585ef87d6bf955b73805f26dd029f00e24a648eac464ec8a812f",
+      "bytes": 67069
+    },
+    {
+      "file": "builtin-purple-512.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 512,
+      "sha256": "f7722cdb3e5f0769bfca70f040c7519f79f4fffe87a172fd66c9b6de59df4836",
+      "bytes": 237658
+    },
+    {
+      "file": "builtin-purple-1024.png",
+      "sample": "builtin",
+      "theme": "#A855F7",
+      "size": 1024,
+      "sha256": "32a958c20b59630cd419646c13b4600aa61154e5154a1136f4b4a16b0deae2d7",
+      "bytes": 738621
+    },
+    {
+      "file": "builtin-gray-16.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 16,
+      "sha256": "00ce85c967956f70eb4bfff8936528df8afa664bfde6f2d7a046c6462f98d61f",
+      "bytes": 587
+    },
+    {
+      "file": "builtin-gray-32.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 32,
+      "sha256": "11899a56c5bafb9565e5938c00d6ec3e678edd61bf84797c73f64c821fb470dd",
+      "bytes": 1278
+    },
+    {
+      "file": "builtin-gray-64.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 64,
+      "sha256": "10b694b85ce4ec155bff464cf3fa8cf4e39ec19aad450081646c9c18497399da",
+      "bytes": 3768
+    },
+    {
+      "file": "builtin-gray-128.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 128,
+      "sha256": "9d0428ab9f084d6d2ca9fa6f1fd42164a8462ccbe6bfe2a7374d55ad3b5885ca",
+      "bytes": 12197
+    },
+    {
+      "file": "builtin-gray-256.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 256,
+      "sha256": "793e7132acfc7df091c2c9923ca552ed4dbe4e6e0c781ce672fc786aa2f1432e",
+      "bytes": 42913
+    },
+    {
+      "file": "builtin-gray-512.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 512,
+      "sha256": "ed419d4bd5fd55b5e417321d78044cfdc641130225687c554fd70fde7e8ca459",
+      "bytes": 141936
+    },
+    {
+      "file": "builtin-gray-1024.png",
+      "sample": "builtin",
+      "theme": "#808080",
+      "size": 1024,
+      "sha256": "35179e80a5f7ccb06f0be3818680401ea295434253dc4f0244d0ed000183e61f",
+      "bytes": 430907
+    },
+    {
+      "file": "text-native-16.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 16,
+      "sha256": "b8364aec02a849dc9a35dd681e9c357cb296de068f2a61718ce5619755160135",
+      "bytes": 726
+    },
+    {
+      "file": "text-native-32.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 32,
+      "sha256": "19b9852f5ddedc5e605b6560d53490f5a3308e5b20eb6d5ae29847eecbd7561f",
+      "bytes": 1564
+    },
+    {
+      "file": "text-native-64.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 64,
+      "sha256": "047826d6f4896c9464d5c85ca8f6ddf416c53798e797c8528435aec3e18101c0",
+      "bytes": 5977
+    },
+    {
+      "file": "text-native-128.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 128,
+      "sha256": "ce526256b66ac46f701ffc2eee17d759bb0a0deb54297ea2e16605989b120ec6",
+      "bytes": 20860
+    },
+    {
+      "file": "text-native-256.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 256,
+      "sha256": "5db360692e8781902b3dfd96a4d997dadc7659caee73717b265169ac3c0997ab",
+      "bytes": 77029
+    },
+    {
+      "file": "text-native-512.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 512,
+      "sha256": "d9231915fa72c21a89ebde1f7fad4103889a32a03216d35ccb4f439ccfbce12e",
+      "bytes": 261655
+    },
+    {
+      "file": "text-native-1024.png",
+      "sample": "text",
+      "theme": "native",
+      "size": 1024,
+      "sha256": "6fd754b42ee7afc6cd3d57ef360a7c4c5ec460a83ce1f49b01679d84aab30890",
+      "bytes": 805145
+    }
+  ],
+  "normalizedMasks": [
+    {
+      "sample": "svg",
+      "file": "tests/fixtures/badges/visual-masks/svg.png",
+      "sha256": "2803ef63eb559ed3619e056de6a12cc46db1210c031f1e9426a513053347d01a",
+      "pixels": [
+        384,
+        384
+      ],
+      "bounds": [
+        0,
+        0,
+        384,
+        384
+      ]
+    },
+    {
+      "sample": "png",
+      "file": "tests/fixtures/badges/visual-masks/png.png",
+      "sha256": "8dd5e06b45d003a08014c479ed69f8513c91f00e7a7698b39886c7c3ad548135",
+      "pixels": [
+        360,
+        420
+      ],
+      "bounds": [
+        44,
+        24,
+        360,
+        420
+      ]
+    },
+    {
+      "sample": "builtin",
+      "file": "tests/fixtures/badges/visual-masks/builtin.png",
+      "sha256": "b9269960f619387a835c1a6b7d67d94d8ebfc7244e1c0c28b3d3ed31b8a4a6d0",
+      "pixels": [
+        1004,
+        683
+      ],
+      "bounds": [
+        10,
+        0,
+        1004,
+        683
+      ]
+    },
+    {
+      "sample": "text",
+      "file": "tests/fixtures/badges/visual-masks/text.png",
+      "sha256": "44a81194a5af2a47b44cc032748a07ed24376cb72af1b5fc84ac41a06f2457a0",
+      "pixels": [
+        177,
+        275
+      ],
+      "bounds": [
+        174,
+        128,
+        177,
+        275
+      ]
+    }
+  ]
+}

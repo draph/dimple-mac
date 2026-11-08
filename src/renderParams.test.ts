@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultParams, hsl, rgb, themes, tint, validParams } from "./renderParams.ts";
+import { defaultParams, engravingOffset, hsl, outputSizes, rgb, themes, tint, validParams } from "./renderParams.ts";
 
 test("render parameters reject unsafe values and accept inclusive boundaries", () => {
   for (const scale of [.25, 1, 2]) for (const offsetX of [-100, 0, 100]) {
@@ -26,4 +26,9 @@ test("theme tint preserves alpha and HSL lightness, including achromatic inputs"
   for (const color of ["#EF4444", "#00FF00", "#0000FF", "#000000", "#FFFFFF", "#808080"]) {
     assert.deepEqual(rgb(...hsl(color)), [1,3,5].map(i => parseInt(color.slice(i,i+2),16)));
   }
+});
+
+test("engraving offsets are calibrated for every output size", () => {
+  assert.deepEqual(outputSizes.map(engravingOffset), [.5, .5, .75, 1, 1.5, 2, 3]);
+  assert.throws(() => engravingOffset(48), { message: "E_RENDER_SIZE" });
 });

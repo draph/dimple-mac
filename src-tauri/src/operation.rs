@@ -6,6 +6,18 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, io::Cursor};
 const SIZES: [u32; 7] = [16, 32, 64, 128, 256, 512, 1024];
+const ICNS_TYPES: [(&str, u32); 10] = [
+    ("ic04", 16),
+    ("ic11", 32),
+    ("ic05", 32),
+    ("ic12", 64),
+    ("ic07", 128),
+    ("ic13", 256),
+    ("ic08", 256),
+    ("ic14", 512),
+    ("ic09", 512),
+    ("ic10", 1024),
+];
 fn invalid(reason: &str) -> AppError {
     AppError::reason("invalid_input", reason)
 }
@@ -264,32 +276,7 @@ impl Prepared {
             images: supplied, ..
         } = &p.request.action
         {
-            let mut bytes = Vec::from(&b"icns\0\0\0\0"[..]);
-            for (kind, size) in [
-                ("icp4", 16),
-                ("icp5", 32),
-                ("icp6", 64),
-                ("ic07", 128),
-                ("ic08", 256),
-                ("ic09", 512),
-                ("ic10", 1024),
-                ("ic11", 32),
-                ("ic12", 64),
-                ("ic13", 256),
-                ("ic14", 512),
-            ] {
-                let index = supplied
-                    .iter()
-                    .position(|i| i.size == size)
-                    .ok_or_else(|| invalid("images"))?;
-                let png = images.get(index).ok_or_else(|| invalid("images"))?;
-                bytes.extend(kind.as_bytes());
-                bytes.extend(((png.len() + 8) as u32).to_be_bytes());
-                bytes.extend(png);
-            }
-            let len = bytes.len() as u32;
-            bytes[4..8].copy_from_slice(&len.to_be_bytes());
-            p.icon = Some(bytes);
+            p.icon = Some(encode_icns(supplied, &images)?);
         }
         p.refresh()?;
         Ok(p)
@@ -336,9 +323,90 @@ impl Prepared {
         Ok(p)
     }
 }
+fn encode_icns(supplied: &[Image], images: &[Vec<u8>]) -> Result<Vec<u8>, AppError> {
+    let mut bytes = Vec::from(&b"icns\0\0\0\0"[..]);
+    for (kind, size) in ICNS_TYPES {
+        let index = supplied
+            .iter()
+            .position(|image| image.size == size)
+            .ok_or_else(|| invalid("images"))?;
+        let png = images.get(index).ok_or_else(|| invalid("images"))?;
+        let payload = if matches!(kind, "ic04" | "ic05") {
+            legacy_argb(png)?
+        } else {
+            png.clone()
+        };
+        bytes.extend(kind.as_bytes());
+        bytes.extend(((payload.len() + 8) as u32).to_be_bytes());
+        bytes.extend(payload);
+    }
+    let len = bytes.len() as u32;
+    bytes[4..8].copy_from_slice(&len.to_be_bytes());
+    Ok(bytes)
+}
+fn legacy_argb(png: &[u8]) -> Result<Vec<u8>, AppError> {
+    let mut decoder = png::Decoder::new(Cursor::new(png));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().map_err(|_| invalid("images"))?;
+    let mut rgba = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .ok_or_else(|| invalid("images"))?
+    ];
+    let frame = reader
+        .next_frame(&mut rgba)
+        .map_err(|_| invalid("images"))?;
+    if frame.color_type != png::ColorType::Rgba || frame.bit_depth != png::BitDepth::Eight {
+        return Err(invalid("images"));
+    }
+    reader.finish().map_err(|_| invalid("images"))?;
+
+    let (pixels, remainder) = rgba[..frame.buffer_size()].as_chunks::<4>();
+    if !remainder.is_empty() {
+        return Err(invalid("images"));
+    }
+    let mut encoded = Vec::from(&b"ARGB"[..]);
+    for channel in [3, 0, 1, 2] {
+        let plane: Vec<_> = pixels
+            .iter()
+            .map(|pixel| {
+                if channel == 3 {
+                    pixel[channel]
+                } else {
+                    ((u16::from(pixel[channel]) * u16::from(pixel[3]) + 127) / 255) as u8
+                }
+            })
+            .collect();
+        for packet in plane.chunks(128) {
+            encoded.push((packet.len() - 1) as u8);
+            encoded.extend(packet);
+        }
+    }
+    // Apple Silicon drops the final compressed blue byte unless the payload ends in zero.
+    encoded.push(0);
+    Ok(encoded)
+}
+#[cfg(test)]
+struct DropDir(std::path::PathBuf);
+#[cfg(test)]
+impl Drop for DropDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn icns_probe_pixel(index: usize) -> [u8; 4] {
+        let alpha = [0, 1, 2, 31, 64, 127, 128, 192, 254, 255][index % 10];
+        [
+            (index * 37 % 256) as u8,
+            (index * 67 + 13) as u8,
+            (index * 97 + 77) as u8,
+            alpha,
+        ]
+    }
     fn request() -> Request {
         parse(r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#).unwrap()
     }
@@ -445,5 +513,183 @@ mod tests {
             images[0].png = "invalid".into();
         }
         assert!(validate(&r).is_err());
+    }
+
+    #[test]
+    fn icns_round_trips_all_standard_and_retina_png_types() {
+        let pngs: Vec<_> = SIZES
+            .into_iter()
+            .enumerate()
+            .map(|(index, size)| {
+                let mut bytes = Vec::new();
+                {
+                    let mut encoder = png::Encoder::new(&mut bytes, size, size);
+                    encoder.set_color(png::ColorType::Rgba);
+                    encoder.set_depth(png::BitDepth::Eight);
+                    let mut writer = encoder.write_header().unwrap();
+                    let color = [index as u8 * 30, 80, 160, 255];
+                    let pixels: Vec<_> = color
+                        .into_iter()
+                        .cycle()
+                        .take(size as usize * size as usize * 4)
+                        .collect();
+                    writer.write_image_data(&pixels).unwrap();
+                }
+                bytes
+            })
+            .collect();
+        let supplied: Vec<_> = SIZES
+            .into_iter()
+            .map(|size| Image {
+                size,
+                png: String::new(),
+            })
+            .collect();
+        let bytes = encode_icns(&supplied, &pngs).unwrap();
+        assert_eq!(&bytes[..4], b"icns");
+        assert_eq!(
+            u32::from_be_bytes(bytes[4..8].try_into().unwrap()) as usize,
+            bytes.len()
+        );
+
+        let mut offset = 8;
+        for (kind, size) in ICNS_TYPES {
+            assert_eq!(&bytes[offset..offset + 4], kind.as_bytes());
+            let length =
+                u32::from_be_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+            let payload = &bytes[offset + 8..offset + length];
+            let image_index = SIZES
+                .iter()
+                .position(|candidate| *candidate == size)
+                .unwrap();
+            let expected = if matches!(kind, "ic04" | "ic05") {
+                legacy_argb(&pngs[image_index]).unwrap()
+            } else {
+                pngs[image_index].clone()
+            };
+            assert_eq!(payload, expected);
+            if matches!(kind, "ic04" | "ic05") {
+                assert!(payload.starts_with(b"ARGB"));
+            } else {
+                let reader = png::Decoder::new(Cursor::new(payload)).read_info().unwrap();
+                assert_eq!((reader.info().width, reader.info().height), (size, size));
+            }
+            offset += length;
+        }
+        assert_eq!(offset, bytes.len());
+    }
+
+    #[test]
+    fn system_iconutil_reads_every_icns_representation_without_inventing_48px() {
+        use std::{fs, process::Command, time::SystemTime};
+
+        let pngs: Vec<_> = SIZES
+            .into_iter()
+            .map(|size| {
+                let mut bytes = Vec::new();
+                {
+                    let mut encoder = png::Encoder::new(&mut bytes, size, size);
+                    encoder.set_color(png::ColorType::Rgba);
+                    encoder.set_depth(png::BitDepth::Eight);
+                    let mut writer = encoder.write_header().unwrap();
+                    let pixels: Vec<_> = (0..size as usize * size as usize)
+                        .flat_map(icns_probe_pixel)
+                        .collect();
+                    writer.write_image_data(&pixels).unwrap();
+                }
+                bytes
+            })
+            .collect();
+        let supplied: Vec<_> = SIZES
+            .into_iter()
+            .map(|size| Image {
+                size,
+                png: String::new(),
+            })
+            .collect();
+        let bytes = encode_icns(&supplied, &pngs).unwrap();
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("folderify-t14-{}-{nonce}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let _cleanup = DropDir(root.clone());
+        let icns = root.join("visual.icns");
+        fs::write(&icns, bytes).unwrap();
+        let output = Command::new("/usr/bin/iconutil")
+            .args(["-c", "iconset"])
+            .arg(&icns)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let iconset = root.join("visual.iconset");
+        let mut dimensions: Vec<_> = fs::read_dir(&iconset)
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                let filename = entry.file_name();
+                let bytes = fs::read(entry.path()).unwrap();
+                let mut decoder = png::Decoder::new(Cursor::new(bytes));
+                decoder.set_transformations(png::Transformations::normalize_to_color8());
+                let mut reader = decoder.read_info().unwrap();
+                let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+                let info = reader.next_frame(&mut pixels).unwrap();
+                let rgba = &pixels[..info.buffer_size()];
+                let (rgba, remainder) = rgba.as_chunks::<4>();
+                assert!(remainder.is_empty());
+                for (index, pixel) in rgba.iter().enumerate() {
+                    let source = icns_probe_pixel(index);
+                    assert_eq!(
+                        pixel[3], source[3],
+                        "alpha changed at {}x{}",
+                        info.width, info.height
+                    );
+                    if matches!(info.width, 16 | 32) {
+                        for channel in 0..3 {
+                            let expected =
+                                (u16::from(source[channel]) * u16::from(source[3]) + 127) / 255;
+                            let actual =
+                                (u16::from(pixel[channel]) * u16::from(pixel[3]) + 127) / 255;
+                            assert!(
+                                expected.abs_diff(actual) <= 1,
+                                "premultiplied RGB changed at {}x{} {}: {pixel:?}",
+                                info.width,
+                                info.height,
+                                filename.to_string_lossy(),
+                            );
+                        }
+                    } else {
+                        assert_eq!(
+                            *pixel, source,
+                            "PNG changed at {}x{}",
+                            info.width, info.height
+                        );
+                    }
+                }
+                (info.width, info.height)
+            })
+            .collect();
+        dimensions.sort_unstable();
+        assert_eq!(
+            dimensions,
+            [
+                (16, 16),
+                (32, 32),
+                (32, 32),
+                (64, 64),
+                (128, 128),
+                (256, 256),
+                (256, 256),
+                (512, 512),
+                (512, 512),
+                (1024, 1024)
+            ]
+        );
     }
 }

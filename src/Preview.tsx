@@ -3,9 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { translate, type Locale } from "./i18n";
 import type { RenderParams } from "./contracts";
-import { hsl, tint, validParams } from "./renderParams";
+import { engravingOffset, hsl, outputSizes, tint, validParams } from "./renderParams";
 
-// shortcut: preview uses candidate engraving values; calibrate all sizes in T14.
 function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: HTMLImageElement, params: RenderParams, layer: HTMLCanvasElement, size = 1024) {
   const ctx = canvas.getContext("2d");
   if (!validParams(params)) throw new Error("E_PREVIEW_PARAMS");
@@ -23,6 +22,7 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
   const height = badge.naturalHeight * factor;
   const x = (1024 - width) / 2 + params.offsetX * 2;
   const y = 548 - height / 2 + params.offsetY * 2;
+  const edgeOffset = engravingOffset(size) * 1024 / size;
   ctx.drawImage(template, 0, 0, 1024, 1024);
   const mask = (offset: number) => ink.drawImage(badge, x, y + offset, width, height);
   const edge = (offset: number, color: string) => {
@@ -41,7 +41,7 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
     return `hsla(${h},${saturation * 100}%,${lightness}%,${alpha})`;
   };
   const native = params.theme === "native";
-  edge(3, native ? "rgba(235,250,255,.65)" : color(96, .65));
+  edge(edgeOffset, native ? "rgba(235,250,255,.65)" : color(96, .65));
   ink.clearRect(0, 0, 1024, 1024);
   ink.globalCompositeOperation = "source-over";
   mask(0);
@@ -56,7 +56,7 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
   ink.globalCompositeOperation = "source-over";
   mask(0);
   ink.globalCompositeOperation = "destination-out";
-  mask(3);
+  mask(edgeOffset);
   ink.globalCompositeOperation = "source-in";
   ink.fillStyle = native ? "rgba(10,65,110,.4)" : color(20, .4);
   ink.fillRect(0, 0, 1024, 1024);
@@ -91,7 +91,7 @@ export async function exportImages(badgeUrl: string, params: RenderParams) {
   const badge = await load(badgeUrl);
   const images = [];
   const canvas = document.createElement("canvas"), layer = document.createElement("canvas");
-  for (const size of [16, 32, 64, 128, 256, 512, 1024]) {
+  for (const size of outputSizes) {
     render(canvas, colored(await template(size), params.theme), badge, params, layer, size);
     images.push({ size, png: canvas.toDataURL("image/png").split(",")[1] });
   }

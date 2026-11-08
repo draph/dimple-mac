@@ -1,11 +1,18 @@
 import type { RenderParams } from "./contracts.ts";
 
 export const defaultParams: RenderParams = { scale: 1, offsetX: 0, offsetY: 0, theme: "native" };
-// shortcut: candidate theme colors; finalize against the visual baselines in T14.
 export const themes = [
   ["native", "native"], ["red", "#EF4444"], ["orange", "#F97316"], ["yellow", "#EAB308"],
   ["green", "#22C55E"], ["purple", "#A855F7"], ["gray", "#808080"],
 ] as const;
+export const outputSizes = [16, 32, 64, 128, 256, 512, 1024] as const;
+const engravingOffsets: Record<(typeof outputSizes)[number], number> = {
+  16: .5, 32: .5, 64: .75, 128: 1, 256: 1.5, 512: 2, 1024: 3,
+};
+export function engravingOffset(size: number): number {
+  if (!outputSizes.includes(size as (typeof outputSizes)[number])) throw new Error("E_RENDER_SIZE");
+  return engravingOffsets[size as (typeof outputSizes)[number]];
+}
 export function validParams(p: RenderParams): boolean {
   return Number.isFinite(p.scale) && p.scale >= .25 && p.scale <= 2
     && [p.offsetX, p.offsetY].every(v => Number.isFinite(v) && v >= -100 && v <= 100)

@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folderify visual baselines</title>
+<style>
+  body { margin: 16px; font: 14px system-ui; color: #222; }
+  button { margin-right: 8px; padding: 8px 12px; }
+  #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 16px; }
+  figure { margin: 0; padding: 8px; background: #888; }
+  img { display: block; width: 100%; image-rendering: pixelated; }
+  figcaption { overflow-wrap: anywhere; margin-top: 4px; color: white; }
+</style>
+<button id="generate">Generate visual baselines</button>
+<button id="download" disabled>Download JSON for pixel comparison</button>
+<p id="status" role="status">Ready</p>
+<div id="gallery"></div>
+<script type="module">
+  import { exportImages } from "/src/Preview.tsx";
+  import { defaultParams, outputSizes, themes } from "/src/renderParams.ts";
+
+  const samples = {
+    svg: "/tests/fixtures/badges/visual-masks/svg.png",
+    png: "/tests/fixtures/badges/visual-masks/png.png",
+    builtin: "/tests/fixtures/badges/visual-masks/builtin.png",
+    text: "/tests/fixtures/badges/visual-masks/text.png",
+  };
+  const palette = ["native", ...themes.slice(1).map(([, color]) => color)];
+  window.generateVisualBaselines = async () => {
+    const all = [];
+    for (const [sample, source] of Object.entries(samples)) {
+      for (const theme of sample === "builtin" ? palette : ["native"]) {
+        const images = await exportImages(source, { ...defaultParams, theme });
+        all.push(...images.map(({ size, png }) => ({ sample, theme, size, png })));
+      }
+    }
+    if (all.length !== 70 || outputSizes.length !== 7) throw new Error("E_BASELINE_COUNT");
+    window.visualBaselineData = {
+      environment: { userAgent: navigator.userAgent, platform: navigator.platform, dpr: devicePixelRatio },
+      all,
+    };
+    const gallery = document.querySelector("#gallery");
+    gallery.replaceChildren();
+    for (const image of all) {
+      const figure = document.createElement("figure");
+      const preview = document.createElement("img");
+      preview.src = `data:image/png;base64,${image.png}`;
+      preview.alt = `${image.sample} / ${image.theme} / ${image.size}px`;
+      preview.width = Math.min(256, Math.max(128, image.size));
+      preview.height = preview.width;
+      const caption = document.createElement("figcaption");
+      caption.textContent = preview.alt;
+      figure.append(preview, caption);
+      gallery.append(figure);
+    }
+    document.querySelector("#status").textContent = `${all.length} images generated`;
+    document.querySelector("#download").disabled = false;
+    return all.length;
+  };
+  document.querySelector("#generate").addEventListener("click", () => window.generateVisualBaselines().catch(error => {
+    document.querySelector("#status").textContent = String(error);
+  }));
+  document.querySelector("#download").addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(window.visualBaselineData)], { type: "application/json" }));
+    link.download = "folderify-visual-baselines.json";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+</script>
