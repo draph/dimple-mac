@@ -63,3 +63,13 @@ test("asset errors have bounded localized reasons", () => {
     assert.equal(errorMessage(locale, {code: "asset_error", params: {reason: "/private/path"}}), translate(locale, "error.generic"));
   }
 });
+
+
+test("text errors have bounded bilingual mappings", () => {
+  for (const locale of ["en", "zh-Hans"] as const) {
+    for (const reason of ["budget", "line", "empty", "length", "control", "missing", "render", "timeout"]) {
+      assert.equal(errorMessage(locale, {code: "text_error", params: {reason}}), translate(locale, `text.error.${reason}`));
+    }
+    assert.equal(errorMessage(locale, {code: "text_error", params: {reason: "private"}}), translate(locale, "error.generic"));
+  }
+});

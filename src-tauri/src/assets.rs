@@ -118,7 +118,7 @@ fn png_mask(bytes: &[u8]) -> Result<Mask, AppError> {
     reader.finish().map_err(|_| error("damaged"))?;
     normalize(alpha, w, h, true)
 }
-fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<Mask, AppError> {
+pub(crate) fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<Mask, AppError> {
     let mut left = w;
     let mut top = h;
     let mut right = 0;

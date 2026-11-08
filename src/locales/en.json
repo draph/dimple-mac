@@ -157,5 +157,17 @@
   "category.development": "Development",
   "category.tools": "Tools",
   "category.arrows": "Arrows",
-  "category.media": "Media"
+  "category.media": "Media",
+  "text.label": "Text badge",
+  "text.hint": "Enter 1–4 visible characters. Text previews automatically; fonts follow macOS.",
+  "text.count": "{count} / 4 characters",
+  "text.active": "Using text: {text}",
+  "text.error.budget": "This text contains too many encoded bytes. Use a shorter character sequence.",
+  "text.error.line": "Use a single line of text. Line breaks are not allowed.",
+  "text.error.empty": "Enter at least one non-whitespace character.",
+  "text.error.length": "Enter 1–4 visible characters. Your text has not been shortened.",
+  "text.error.control": "Control characters are not supported. Remove them and try again.",
+  "text.error.missing": "A glyph is unavailable in the system fonts. Try different text.",
+  "text.error.render": "This text could not be rendered completely. Try different text.",
+  "text.error.timeout": "Text rendering timed out. Try again or use another badge."
 }

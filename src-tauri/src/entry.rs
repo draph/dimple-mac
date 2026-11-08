@@ -11,6 +11,9 @@ pub struct Snapshot {
     badge: Badge,
     badge_error: Option<AppError>,
     importing: bool,
+    text: Option<String>,
+    text_count: Option<usize>,
+    text_pending: bool,
     #[serde(skip)]
     mask: Option<std::sync::Arc<crate::assets::Mask>>,
     revision: u64,
@@ -45,6 +48,7 @@ struct Badge {
     width: u32,
     height: u32,
     opaque: bool,
+    text: Option<String>,
 }
 impl Default for Badge {
     fn default() -> Self {
@@ -53,6 +57,7 @@ impl Default for Badge {
             width: 384,
             height: 256,
             opaque: false,
+            text: None,
         }
     }
 }
@@ -215,6 +220,7 @@ fn receive_paths<R: tauri::Runtime>(
             return;
         }
         s.choosing = false;
+        cancel_text(&mut s);
         invalidate_read(&mut s);
         s.checking = true;
         s.importing = paths.len() == 1
@@ -387,9 +393,12 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
                     width: mask.width,
                     height: mask.height,
                     opaque: mask.opaque,
+                    text: None,
                 };
                 s.mask = Some(std::sync::Arc::new(mask));
                 s.badge_error = None;
+                s.text = None;
+                s.text_count = None;
                 s.error = None;
                 edited(s);
             } else {
@@ -593,18 +602,149 @@ pub fn select_badge<R: tauri::Runtime>(
         return Err(AppError::reason("invalid_input", "asset"));
     }
     let mask = builtin.map(crate::assets::svg_mask).transpose()?;
-    accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
+    accept_badge_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
     if let Some(mask) = mask {
         s.badge = Badge {
             id: badge_id,
             width: mask.width,
             height: mask.height,
             opaque: false,
+            text: None,
         };
         s.mask = Some(std::sync::Arc::new(mask));
     }
     s.badge_error = None;
+    s.text = s.badge.text.clone();
+    s.text_count = s.text.as_deref().and_then(|t| crate::text::count(t).ok());
     commit_update(&app, s);
+    Ok(())
+}
+
+fn cancel_text(s: &mut Snapshot) {
+    if s.text_pending {
+        s.text_pending = false;
+        s.importing = false;
+        s.badge_error = Some(AppError::reason("text_error", "render"));
+        s.request += 1;
+    }
+}
+
+fn accept_badge_edit(
+    s: &mut Snapshot,
+    expected: u64,
+    operation: Option<&str>,
+) -> Result<(), AppError> {
+    if s.edit_revision != expected
+        || s.operation.as_ref().map(|p| p.operation_id.as_str()) != operation
+    {
+        return Err(AppError::reason("target_changed", "changed"));
+    }
+    if s.operation_locked()
+        || s.choosing
+        || s.checking
+        || s.active_read.is_some()
+        || s.preparing
+        || (s.importing && !s.text_pending)
+    {
+        return Err(AppError::reason("busy", "busy"));
+    }
+    cancel_text(s);
+    accept_edit(s, expected, operation)
+}
+
+fn start_text(
+    s: &mut Snapshot,
+    text: String,
+    expected: u64,
+    operation: Option<&str>,
+) -> Result<u64, AppError> {
+    accept_badge_edit(s, expected, operation)?;
+    s.text_count = crate::text::count(&text).ok();
+    let validation = crate::text::validate(&text);
+    if text.len() <= crate::text::BYTE_LIMIT {
+        s.text = Some(text);
+    }
+    s.badge_error = validation.err();
+    s.text_pending = s.badge_error.is_none();
+    s.importing = s.text_pending;
+    Ok(s.request)
+}
+
+fn finish_text(s: &mut Snapshot, request: u64, result: Result<targets::Checked, AppError>) {
+    if s.request != request || !s.text_pending {
+        return;
+    }
+    s.importing = false;
+    s.text_pending = false;
+    match result.and_then(|r| {
+        r.mask
+            .ok_or_else(|| AppError::reason("text_error", "render"))
+    }) {
+        Ok(mask) => {
+            s.badge = Badge {
+                id: targets::next_id("text"),
+                width: mask.width,
+                height: mask.height,
+                opaque: false,
+                text: s.text.clone(),
+            };
+            s.mask = Some(std::sync::Arc::new(mask));
+            s.badge_error = None;
+        }
+        Err(error) => {
+            s.badge_error = Some(if error.code == "text_error" {
+                error
+            } else {
+                AppError::reason(
+                    "text_error",
+                    if error.code == "timeout" {
+                        "timeout"
+                    } else {
+                        "render"
+                    },
+                )
+            })
+        }
+    }
+}
+
+#[tauri::command]
+pub fn set_text_badge<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    text: String,
+    composing: bool,
+    expected_edit_revision: u64,
+    operation_id: Option<String>,
+) -> Result<(), AppError> {
+    let request = {
+        let inbox = app.state::<Inbox>();
+        let mut s = inbox.0.lock().unwrap();
+        let request = start_text(
+            &mut s,
+            text.clone(),
+            expected_edit_revision,
+            operation_id.as_deref(),
+        )?;
+        let pending = s.text_pending;
+        // Composition is a draft even if its interim contents are not yet valid.
+        if composing && text.len() <= crate::text::BYTE_LIMIT {
+            s.badge_error = None;
+            s.text_pending = true;
+            s.importing = true;
+        }
+        commit_update(&app, s);
+        if composing || !pending {
+            return Ok(());
+        }
+        request
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let result = targets::check_cancellable(targets::Request::Text(text), || {
+            app.state::<Inbox>().0.lock().unwrap().request == request
+        });
+        update(&app, |s| finish_text(s, request, result));
+    });
     Ok(())
 }
 #[tauri::command]
@@ -619,22 +759,11 @@ fn read_finder<R: tauri::Runtime>(
     let (revision, generation) = {
         let state = app.state::<Inbox>();
         let mut state = state.0.lock().unwrap();
-        if state.operation_locked()
-            || state.active_read.is_some()
-            || state.choosing
-            || state.checking
-            || state.preparing
-            || expected_request.is_some_and(|expected| expected != state.request)
-        {
+        let Some(claim) = claim_finder_read(&mut state, expected_request) else {
             return;
-        }
-        state.read_counter += 1;
-        state.active_read = Some(state.read_counter);
-        state.request += 1;
-        let revision = state.request;
-        let generation = state.read_counter;
+        };
         commit_update(&app, state);
-        (revision, generation)
+        claim
     };
     tauri::async_runtime::spawn_blocking(move || {
         if !read_is_current(&app, generation) {
@@ -656,6 +785,22 @@ fn read_finder<R: tauri::Runtime>(
         commit_update(&app, state);
     });
 }
+fn claim_finder_read(s: &mut Snapshot, expected_request: Option<u64>) -> Option<(u64, u64)> {
+    if s.operation_locked()
+        || s.active_read.is_some()
+        || s.choosing
+        || s.checking
+        || s.preparing
+        || expected_request.is_some_and(|expected| expected != s.request)
+    {
+        return None;
+    }
+    cancel_text(s);
+    s.read_counter += 1;
+    s.active_read = Some(s.read_counter);
+    s.request += 1;
+    Some((s.request, s.read_counter))
+}
 fn read_is_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, generation: u64) -> bool {
     let state = app.state::<Inbox>();
     let s = state.0.lock().unwrap();
@@ -668,6 +813,7 @@ fn clear_automatic(s: &mut Snapshot, expected_request: u64) {
         || s.preparing
         || s.choosing
         || s.checking
+        || s.importing
         || s.active_read.is_some()
         || !(s.items.is_empty() || s.source == "finder-auto")
     {
@@ -686,6 +832,7 @@ fn plan_wake(s: &mut Snapshot, hidden: bool) -> (bool, bool) {
         && !s.preparing
         && !s.choosing
         && !s.checking
+        && !s.importing
         && hidden
         && (s.items.is_empty() || s.source == "finder-auto");
     // A new activation decides again; any read already in flight must not answer it.
@@ -800,7 +947,13 @@ fn begin_prepare(
     s: &mut Snapshot,
     input: &operation::Request,
 ) -> Result<Vec<targets::Target>, AppError> {
-    if s.operation_locked() || s.preparing || s.choosing || s.checking || s.active_read.is_some() {
+    if s.operation_locked()
+        || s.preparing
+        || s.choosing
+        || s.checking
+        || s.importing
+        || s.active_read.is_some()
+    {
         return Err(AppError::reason("busy", "busy"));
     }
     if s.operation.is_some() {
@@ -1962,7 +2115,8 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 crate::get_session,
                 super::get_badge_mask,
-                super::select_badge
+                super::select_badge,
+                super::set_text_badge
             ])
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
@@ -2041,6 +2195,141 @@ mod tests {
                     .unwrap()
                     .starts_with("iVBOR")
             );
+        }
+        let before = ipc("get_session", json!({})).unwrap();
+        let version = before["entry"]["editRevision"].as_u64().unwrap();
+        ipc("set_text_badge", json!({"text":"中文", "composing":true, "expectedEditRevision":version, "operationId":null})).unwrap();
+        let draft = ipc("get_session", json!({})).unwrap();
+        assert_eq!(draft["entry"]["text"], "中文");
+        assert_eq!(draft["entry"]["textPending"], true);
+        assert!(ipc("set_text_badge", json!({"text":"old", "composing":false, "expectedEditRevision":version, "operationId":null})).is_err());
+        ipc("set_text_badge", json!({"text":"中文", "composing":false, "expectedEditRevision":version+1, "operationId":null})).unwrap();
+        let start = std::time::Instant::now();
+        let ready = loop {
+            let snapshot = ipc("get_session", json!({})).unwrap();
+            if snapshot["entry"]["textPending"] == false {
+                break snapshot;
+            }
+            assert!(start.elapsed() < std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert!(ready["entry"]["badgeError"].is_null());
+        assert_eq!(ready["entry"]["badge"]["text"], "中文");
+        assert!(
+            ipc(
+                "get_badge_mask",
+                json!({"badgeId":ready["entry"]["badge"]["id"]})
+            )
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .starts_with("iVBOR")
+        );
+        ipc("set_text_badge", json!({"text":"12345", "composing":false, "expectedEditRevision":version+2, "operationId":null})).unwrap();
+        let invalid = ipc("get_session", json!({})).unwrap();
+        assert_eq!(invalid["entry"]["badgeError"]["params"]["reason"], "length");
+        ipc("select_badge", json!({"badgeId":ready["entry"]["badge"]["id"], "expectedEditRevision":version+3, "operationId":null})).unwrap();
+        let restored = ipc("get_session", json!({})).unwrap();
+        assert_eq!(restored["entry"]["text"], "中文");
+        assert!(restored["entry"]["badgeError"].is_null());
+        ipc(
+            "select_badge",
+            json!({"badgeId":"code", "expectedEditRevision":version+4, "operationId":null}),
+        )
+        .unwrap();
+        assert!(ipc("get_session", json!({})).unwrap()["entry"]["text"].is_null());
+    }
+    #[test]
+    fn text_edits_preserve_assets_reject_stale_results_and_gate_preparation() {
+        let mut s = targets();
+        let first = super::start_text(&mut s, "中文".into(), 0, None).unwrap();
+        assert!(s.text_pending && s.importing);
+        let request = crate::operation::parse(&serde_json::json!({"revision":s.revision,"targetIds":[s.items[0].id],"action":{"type":"restore"}}).to_string()).unwrap();
+        assert!(super::begin_prepare(&mut s, &request).is_err());
+        let revision = s.edit_revision;
+        assert!(super::start_text(&mut s, "old".into(), revision - 1, None).is_err());
+        assert!(s.text_pending);
+        let second = super::start_text(&mut s, "AB".into(), revision, None).unwrap();
+        super::finish_text(
+            &mut s,
+            first,
+            Ok(crate::targets::Checked {
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }),
+        );
+        assert!(s.text_pending);
+        assert_eq!(s.badge.id, "code");
+        super::finish_text(
+            &mut s,
+            second,
+            Ok(crate::targets::Checked {
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }),
+        );
+        assert_eq!(s.badge.text.as_deref(), Some("AB"));
+        let id = s.badge.id.clone();
+        let png = s.mask.as_ref().unwrap().png.clone();
+        let revision = s.edit_revision;
+        super::start_text(&mut s, "12345".into(), revision, None).unwrap();
+        assert_eq!(s.badge_error.as_ref().unwrap().params["reason"], "length");
+        assert_eq!(s.badge.id, id);
+        assert_eq!(s.mask.as_ref().unwrap().png, png);
+        assert_eq!(s.items.len(), 3);
+        let snapshot = serde_json::to_value(&s).unwrap();
+        assert_eq!(snapshot["text"], "12345");
+        assert_eq!(snapshot["textCount"], 5);
+        assert_eq!(snapshot["badge"]["text"], "AB");
+        assert!(snapshot.get("mask").is_none());
+        let revision = s.edit_revision;
+        let third = super::start_text(&mut s, "CD".into(), revision, None).unwrap();
+        super::cancel_text(&mut s);
+        assert!(s.badge_error.is_some());
+        super::finish_text(
+            &mut s,
+            third,
+            Ok(crate::targets::Checked {
+                mask: Some(imported_mask()),
+                ..Default::default()
+            }),
+        );
+        assert_eq!(s.badge.id, id);
+        s.checking = true;
+        let revision = s.edit_revision;
+        assert!(super::start_text(&mut s, "EF".into(), revision, None).is_err());
+        assert_eq!(s.text.as_deref(), Some("CD"));
+    }
+    #[test]
+    fn finder_takeover_cancels_text_waiting_on_success_and_failure() {
+        for success in [true, false] {
+            let mut s = targets();
+            let request = super::start_text(&mut s, "中文".into(), 0, None).unwrap();
+            assert_eq!(super::plan_wake(&mut s, true), (false, false));
+            super::clear_automatic(&mut s, request);
+            assert!(s.text_pending);
+            let (read_request, generation) = super::claim_finder_read(&mut s, None).unwrap();
+            assert!(!s.text_pending && !s.importing);
+            assert!(s.badge_error.is_some());
+            let result = if success {
+                Ok(targets().items)
+            } else {
+                Err("finderFailed")
+            };
+            super::complete_read(&mut s, generation, read_request, false, result);
+            super::finish_text(
+                &mut s,
+                request,
+                Ok(crate::targets::Checked {
+                    mask: Some(imported_mask()),
+                    ..Default::default()
+                }),
+            );
+            assert!(!s.text_pending && !s.importing);
+            assert!(s.active_read.is_none());
+            assert_eq!(s.badge.id, "code");
+            let revision = s.edit_revision;
+            assert!(super::start_text(&mut s, "AB".into(), revision, None).is_ok());
         }
     }
     #[test]

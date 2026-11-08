@@ -157,5 +157,17 @@
   "category.development": "开发",
   "category.tools": "工具",
   "category.arrows": "箭头",
-  "category.media": "媒体"
+  "category.media": "媒体",
+  "text.label": "文字徽标",
+  "text.hint": "输入 1–4 个用户可见字符后自动预览，使用 macOS 系统字体。",
+  "text.count": "{count} / 4 个字符",
+  "text.active": "正在使用文字：{text}",
+  "text.error.budget": "文字编码过长，请使用更短的字符序列。",
+  "text.error.line": "文字徽标只支持单行，请移除换行后重试。",
+  "text.error.empty": "请输入至少一个非空白字符。",
+  "text.error.length": "请输入 1–4 个用户可见字符，输入内容未被截断。",
+  "text.error.control": "文字徽标不支持控制字符，请移除后重试。",
+  "text.error.missing": "系统字体中缺少所需字形，请更换文字。",
+  "text.error.render": "无法完整绘制此文字，请更换文字后重试。",
+  "text.error.timeout": "文字绘制超时，请重试或使用其他徽标。"
 }

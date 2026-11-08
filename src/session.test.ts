@@ -6,7 +6,7 @@ import type { Session } from "./i18n.ts";
 function session(revision = 1): Session {
   return {
     version: "0.1.0", locale: "en",
-    entry: { badge: { id: "code", width: 384, height: 256, opaque: false }, badgeError: null, importing: false, revision, editRevision: 1, pinned: false, source: "picker", items: [{ id: "one", path: "/tmp/one", actualPath: "/tmp/one", linked: false, kind: "directory", error: null }], issues: [], error: null, choosing: false, reading: false, checking: false, preparing: false },
+    entry: { badge: { id: "code", width: 384, height: 256, opaque: false, text: null }, badgeError: null, importing: false, text: null, textCount: null, textPending: false, revision, editRevision: 1, pinned: false, source: "picker", items: [{ id: "one", path: "/tmp/one", actualPath: "/tmp/one", linked: false, kind: "directory", error: null }], issues: [], error: null, choosing: false, reading: false, checking: false, preparing: false },
     operation: { revision, prepared: null, progress: null },
   };
 }

@@ -55,6 +55,7 @@ pub struct Checked {
 pub enum Request {
     Inspect(Vec<PathBuf>),
     Fingerprint(Vec<Target>),
+    Text(String),
 }
 fn failure(reason: &'static str) -> AppError {
     AppError::reason("invalid_input", reason)
@@ -158,6 +159,10 @@ pub fn revalidate(target: &Target) -> Result<(), AppError> {
 }
 fn execute(request: Request) -> Result<Checked, AppError> {
     match request {
+        Request::Text(text) => Ok(Checked {
+            mask: Some(crate::text::render(&text)?),
+            ..Default::default()
+        }),
         Request::Inspect(paths) => {
             if paths.is_empty() {
                 return Err(failure("empty"));

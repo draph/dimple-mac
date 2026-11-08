@@ -8,6 +8,7 @@ mod macos;
 mod native_menu;
 mod operation;
 mod targets;
+mod text;
 
 use localization::Locale;
 use tauri::Manager;
@@ -142,6 +143,7 @@ pub fn run() {
             entry::choose_targets,
             entry::choose_badge,
             entry::select_badge,
+            entry::set_text_badge,
             entry::get_badge_mask,
             entry::finder_selection,
             entry::remove_target,
