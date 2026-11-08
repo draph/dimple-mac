@@ -52,7 +52,7 @@ If an import fails, the previous valid badge and target context remain, but Appl
 
 The badge uses the image's transparency, not its color. Transparent margins are trimmed for placement; an opaque PNG produces a solid rectangular badge. Text accepts a single line of 1–4 visible characters in Chinese, English, or digits; whitespace-only input and unavailable glyphs are rejected.
 
-Expand **Adjustments** to change scale, horizontal/vertical position, or folder color. Presets include native blue, red, orange, yellow, green, purple, and gray, with a custom color option. **Reset Parameters** keeps the selected folders and badge and resets the adjustments; it does not change icons on disk.
+Expand **Adjustments** to change scale, horizontal/vertical position, or folder color. Presets include native blue, red, orange, yellow, green, purple, and gray, with a custom color option. **Reset adjustments** keeps the selected folders and badge and resets the adjustments; it does not change icons on disk. Scale ranges from 0.25 to 2 (step 0.01); each offset ranges from −100 to 100 (step 1, two pixels per unit on a 1024-pixel canvas). Colors set hue and saturation while preserving template lightness and alpha, so black, white, and gray inputs produce similar gray folders. Adjustments survive WebView reloads in runtime memory and are cleared when the app exits. Theme colors and engraving remain candidates pending T14 visual calibration.
 
 ### Restore defaults and handle partial results
 

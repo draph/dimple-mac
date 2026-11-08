@@ -64,3 +64,13 @@ dialog::backdrop { background: #10182888; }
 dialog p { margin-bottom: 8px; }
 .confirmation-targets, .operation-results { padding-left: 18px; max-height: 180px; overflow: auto; }
 .confirmation-targets li, .operation-results li { margin: 8px 0; }
+.adjustments { margin-top: 12px; }
+.adjustments fieldset { border: 0; padding: 12px 0 0; min-width: 0; display: grid; gap: 12px; }
+.adjustments label { display: block; }
+.adjustments input[type="range"] { display: block; width: 100%; accent-color: var(--accent); }
+.adjustments input[type="text"] { width: 110px; max-width: 100%; }
+.adjustments input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.theme-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.theme-presets [aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.adjustments label { font-size: 12px; }
+.adjustments input[type="text"] { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; background: var(--surface); color: inherit; }

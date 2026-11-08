@@ -30,12 +30,40 @@ pub enum Action {
     },
     Restore {},
 }
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
     scale: f64,
     offset_x: f64,
     offset_y: f64,
+    pub theme: String,
+}
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            scale: 1.,
+            offset_x: 0.,
+            offset_y: 0.,
+            theme: "native".into(),
+        }
+    }
+}
+impl Params {
+    pub fn validate(&self) -> Result<(), AppError> {
+        if !self.scale.is_finite()
+            || !(0.25..=2.).contains(&self.scale)
+            || [self.offset_x, self.offset_y]
+                .into_iter()
+                .any(|v| !v.is_finite() || !(-100. ..=100.).contains(&v))
+            || !(self.theme == "native"
+                || (self.theme.len() == 7
+                    && self.theme.starts_with('#')
+                    && self.theme.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)))
+        {
+            return Err(invalid("params"));
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,14 +108,7 @@ pub fn validate(input: &Request) -> Result<Vec<Vec<u8>>, AppError> {
     if template_id != "big-sur-light-blue" || badge_id.is_empty() {
         return Err(invalid("asset"));
     }
-    if !params.scale.is_finite()
-        || !(0.25..=2.).contains(&params.scale)
-        || [params.offset_x, params.offset_y]
-            .into_iter()
-            .any(|v| !v.is_finite() || !(-100. ..=100.).contains(&v))
-    {
-        return Err(invalid("params"));
-    }
+    params.validate()?;
     if images.len() != SIZES.len() {
         return Err(invalid("images"));
     }
@@ -322,6 +343,35 @@ mod tests {
         parse(r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#).unwrap()
     }
     #[test]
+    fn render_params_validate_themes_and_numeric_boundaries() {
+        for color in ["native", "#EF4444", "#000000", "#ffffff"] {
+            for scale in [0.25, 2.] {
+                let p: Params = serde_json::from_value(
+                    serde_json::json!({"scale":scale,"offsetX":-100,"offsetY":100,"theme":color}),
+                )
+                .unwrap();
+                assert!(p.validate().is_ok());
+            }
+        }
+        for color in ["", "red", "#FFF", "#12345G", "#１２３４５６"] {
+            let p = Params {
+                theme: color.into(),
+                ..Default::default()
+            };
+            assert!(p.validate().is_err());
+        }
+        for scale in [f64::NAN, f64::INFINITY, 0.24, 2.01] {
+            assert!(
+                Params {
+                    scale,
+                    ..Default::default()
+                }
+                .validate()
+                .is_err()
+            );
+        }
+    }
+    #[test]
     fn rejects_unregistered_duplicate_and_arbitrary_path_inputs() {
         assert!(resolve(&["/tmp/arbitrary".into()], &[]).is_err());
         assert!(resolve(&[], &[]).is_err());
@@ -338,7 +388,7 @@ mod tests {
             parse(r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore","images":[]}}"#)
                 .is_err()
         );
-        assert!(parse(r#"{"revision":1,"targetIds":["x"],"action":{"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":null,"offsetX":0,"offsetY":0},"images":[]}}"#).is_err());
+        assert!(parse(r#"{"revision":1,"targetIds":["x"],"action":{"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":null,"offsetX":0,"offsetY":0,"theme":"native"},"images":[]}}"#).is_err());
     }
     #[test]
     fn validates_real_png_sizes_corruption_and_parameter_bounds() {
@@ -370,6 +420,7 @@ mod tests {
                     scale: 1.,
                     offset_x: 0.,
                     offset_y: 0.,
+                    theme: "native".into(),
                 },
                 images,
             },

@@ -9,6 +9,7 @@ use tauri::{Emitter, Manager};
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     badge: Badge,
+    params: operation::Params,
     badge_error: Option<AppError>,
     importing: bool,
     text: Option<String>,
@@ -144,8 +145,9 @@ fn finish_success<R: tauri::Runtime>(app: &tauri::AppHandle<R>, token: &(String,
         // This runs on the main thread, so hide completes before a later input can show.
         if !s.pinned
             && let Some(w) = app.get_webview_window("main")
+            && w.hide().is_ok()
         {
-            let _ = w.hide();
+            let _ = app.emit("panel-visibility", false);
         }
         commit_update(app, s);
     }
@@ -430,7 +432,9 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
 }
 pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
+        if w.show().is_ok() {
+            let _ = app.emit("panel-visibility", true);
+        }
         let _ = w.set_focus();
     }
 }
@@ -962,8 +966,10 @@ fn begin_prepare(
     if s.revision != input.revision {
         return Err(AppError::reason("target_changed", "changed"));
     }
-    if let operation::Action::Apply { badge_id, .. } = &input.action
-        && (s.badge_error.is_some() || *badge_id != s.badge.id)
+    if let operation::Action::Apply {
+        badge_id, params, ..
+    } = &input.action
+        && (s.badge_error.is_some() || *badge_id != s.badge.id || *params != s.params)
     {
         return Err(AppError::reason("invalid_input", "asset"));
     }
@@ -1105,6 +1111,21 @@ pub fn begin_edit<R: tauri::Runtime>(
     let inbox = app.state::<Inbox>();
     let mut s = inbox.0.lock().unwrap();
     accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
+    commit_update(&app, s);
+    Ok(())
+}
+#[tauri::command]
+pub fn set_render_params<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    expected_edit_revision: u64,
+    operation_id: Option<String>,
+    params: operation::Params,
+) -> Result<(), AppError> {
+    params.validate()?;
+    let inbox = app.state::<Inbox>();
+    let mut s = inbox.0.lock().unwrap();
+    accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
+    s.params = params;
     commit_update(&app, s);
     Ok(())
 }
@@ -1369,6 +1390,59 @@ mod tests {
         s.cleanup = Some((progress.operation_id.clone(), s.edit_revision));
         s.operation = Some(progress);
         s
+    }
+    #[test]
+    fn render_param_edits_restore_snapshots_and_reject_stale_or_locked_edits() {
+        use serde_json::json;
+        use tauri::Manager;
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox::default())
+            .invoke_handler(tauri::generate_handler![
+                super::set_render_params,
+                super::get_entry
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let set = |revision, params: serde_json::Value| {
+            tauri::test::get_ipc_response(
+                &window,
+                tauri::webview::InvokeRequest {
+                    cmd: "set_render_params".into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "tauri://localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(
+                        json!({"expectedEditRevision":revision,"operationId":null,"params":params}),
+                    ),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.into(),
+                },
+            )
+        };
+        let params = json!({"scale":2.0,"offsetX":-100.0,"offsetY":100.0,"theme":"#EF4444"});
+        assert!(set(0, params.clone()).is_ok());
+        let snapshot = super::session(app.handle()).0;
+        assert_eq!(serde_json::to_value(&snapshot.params).unwrap(), params);
+        assert_eq!(snapshot.edit_revision, 1);
+        assert!(set(0, params.clone()).is_err());
+        assert!(set(1, json!({"scale":1,"offsetX":0,"offsetY":0,"theme":"#FFF"})).is_err());
+        assert_eq!(super::session(app.handle()).0.edit_revision, 1);
+        {
+            let inbox = app.state::<super::Inbox>();
+            inbox.0.lock().unwrap().preparing = true;
+        }
+        assert!(set(1, params.clone()).is_err());
+        {
+            let inbox = app.state::<super::Inbox>();
+            let mut s = inbox.0.lock().unwrap();
+            s.preparing = false;
+            let input = crate::operation::parse(&json!({"revision":s.revision,"targetIds":["x"],"action":{"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0,"theme":"native"},"images":[]}}).to_string()).unwrap();
+            assert!(super::begin_prepare(&mut s, &input).is_err());
+            assert_eq!(serde_json::to_value(&s.params).unwrap(), params);
+        }
     }
     #[test]
     fn successful_release_waits_for_candidates_and_preserves_pin() {
@@ -1707,6 +1781,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 crate::get_session,
                 super::begin_edit,
+                super::set_render_params,
                 super::set_pinned,
                 super::get_entry,
                 super::prepare_operation,
@@ -1752,7 +1827,7 @@ mod tests {
             let file=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset/icon_{name}.png"));
             json!({"size":size,"png":base64::engine::general_purpose::STANDARD.encode(std::fs::read(file).unwrap())})
         }).collect();
-        let applied=prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0},"images":images})).unwrap();
+        let applied=prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0,"theme":"native"},"images":images})).unwrap();
         assert_eq!(applied["commitAvailable"], true);
         assert!(entry().get("prepared").is_none());
         ipc(
@@ -1774,7 +1849,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(prepare(json!({"type":"apply","templateId":"forged","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0},"images":[]})).is_err());
+        assert!(prepare(json!({"type":"apply","templateId":"forged","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0,"theme":"native"},"images":[]})).is_err());
         assert_eq!(entry()["preparing"], false);
         let prepared = prepare(json!({"type":"restore"})).unwrap();
         let e = entry();
@@ -1822,7 +1897,7 @@ mod tests {
             panic!("operation did not finish");
         };
         let apply = || {
-            prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0},"images":images})).unwrap()
+            prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0,"theme":"native"},"images":images})).unwrap()
         };
         select();
         let p = apply();
@@ -2078,7 +2153,7 @@ mod tests {
         assert!(s.badge_error.is_some());
         assert!(!s.importing);
         s.operation = None;
-        let request = crate::operation::parse(&serde_json::json!({"revision":s.revision,"targetIds":["any"],"action":{"type":"apply","templateId":"big-sur-light-blue","badgeId":id,"params":{"scale":1,"offsetX":0,"offsetY":0},"images":[]}}).to_string()).unwrap();
+        let request = crate::operation::parse(&serde_json::json!({"revision":s.revision,"targetIds":["any"],"action":{"type":"apply","templateId":"big-sur-light-blue","badgeId":id,"params":{"scale":1,"offsetX":0,"offsetY":0,"theme":"native"},"images":[]}}).to_string()).unwrap();
         assert_eq!(
             super::begin_prepare(&mut s, &request).unwrap_err().params["reason"],
             "asset"

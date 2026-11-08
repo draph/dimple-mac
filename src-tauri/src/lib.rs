@@ -11,7 +11,7 @@ mod targets;
 mod text;
 
 use localization::Locale;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[derive(Clone, serde::Serialize)]
 struct Session {
@@ -54,6 +54,11 @@ fn quit_app(app: tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn panel_visible(window: tauri::WebviewWindow) -> bool {
+    window.is_visible().unwrap_or(false)
+}
+
 pub fn run() {
     if targets::worker() {
         return;
@@ -73,8 +78,8 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                if entry::can_hide(window.app_handle()) {
-                    let _ = window.hide();
+                if entry::can_hide(window.app_handle()) && window.hide().is_ok() {
+                    let _ = window.emit("panel-visibility", false);
                 }
             }
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
@@ -139,6 +144,8 @@ pub fn run() {
             quit_app,
             entry::get_entry,
             entry::begin_edit,
+            entry::set_render_params,
+            panel_visible,
             entry::set_pinned,
             entry::choose_targets,
             entry::choose_badge,

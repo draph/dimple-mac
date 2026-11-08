@@ -9,13 +9,21 @@ import { icons, categories, searchIcons } from "./icons";
 const thumbnails = import.meta.glob<string>("./assets/*.svg", { query: "?url", import: "default", eager: true });
 
 import { acceptSession, sameContext, sameDraft } from "./session";
-import type { PreparedOperation, PrepareOperation } from "./contracts";
+import type { PreparedOperation, PrepareOperation, RenderParams } from "./contracts";
 import { TextBadge } from "./TextBadge";
+import { Adjustments } from "./Adjustments";
+import { defaultParams } from "./renderParams";
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const current = useRef<Session | null>(null);
   const epoch = useRef(0);
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
+  const [localParams, setLocalParams] = useState<RenderParams | null>(null);
+  const [paramsPending, setParamsPending] = useState(false);
+  const paramsEpoch = useRef(0);
+  const onParamsChange = useCallback((params: RenderParams | null, pending: boolean) => {
+    ++paramsEpoch.current; setLocalParams(params); setParamsPending(pending);
+  }, []);
   const [readyBadgeId, setReadyBadgeId] = useState<string | null>(null);
   const [imported, setImported] = useState<{ id: string; url: string } | null>(null);
   const [query, setQuery] = useState("");
@@ -42,7 +50,8 @@ export default function App() {
   const entry = session?.entry;
   const badgeId = entry?.badge.id ?? "code";
   const badgeSource = imported?.id === badgeId ? imported.url : null;
-  const previewReady = readyBadgeId === badgeId && !!badgeSource && !entry?.badgeError && !entry?.importing && !textQueued;
+  const renderParams = localParams ?? entry?.params ?? defaultParams;
+  const previewReady = !paramsPending && readyBadgeId === JSON.stringify([badgeId, renderParams]) && !!badgeSource && !entry?.badgeError && !entry?.importing && !textQueued;
   useEffect(() => {
     let active = true;
     let url: string | undefined;
@@ -95,16 +104,18 @@ export default function App() {
     await refreshSession(generation);
   };
   const start = async (restore: boolean) => {
-    if (submitGuard.current || busy || textQueued || !entry?.items.length || progress || (!restore && !previewReady) || !session) return;
+    if (submitGuard.current || busy || textQueued || paramsPending || !entry?.items.length || progress || (!restore && !previewReady) || !session) return;
     submitGuard.current = true; setSubmitting(true); setFailure(null);
     const generation = epoch.current;
     const draft = session;
     const textVersion = textEpoch.current;
+    const paramsVersion = paramsEpoch.current;
+    const frozenParams = { ...renderParams };
     const targetIds = entry.items.map(item => item.id);
     try {
-      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId, params: { scale: 1, offsetX: 0, offsetY: 0 }, images: await exportImages(badgeSource!) };
+      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId, params: frozenParams, images: await exportImages(badgeSource!, frozenParams) };
       const latest = await refreshSession(generation);
-      if (textVersion !== textEpoch.current || !sameDraft(draft, latest, restore)) return;
+      if (paramsVersion !== paramsEpoch.current || textVersion !== textEpoch.current || !sameDraft(draft, latest, restore)) return;
       const p = await invoke<PreparedOperation>("prepare_operation", { request: JSON.stringify({ revision: latest!.entry.revision, targetIds, action }) });
       if (generation !== epoch.current) return;
       if (p.confirmationToken) await refreshSession(generation);
@@ -145,14 +156,14 @@ export default function App() {
             <summary>{t("entry.details")}</summary>
             <ul className="target-list">{entry.items.map((item) => <li key={item.id}>
               <div><strong>{name(item.path)}</strong><p className="path">{item.path}</p>{item.linked && <><p className="path">{translate(locale, "entry.actualPath", { path: item.actualPath })}</p><p>{t("entry.linkConfirmation")}</p></>}</div>
-              <button className="quiet" disabled={busy} aria-label={translate(locale, "entry.removeName", { name: name(item.path) })}
+              <button className="quiet" disabled={busy || paramsPending} aria-label={translate(locale, "entry.removeName", { name: name(item.path) })}
                 onClick={() => command("remove_target", { expectedRevision: entry.revision, targetId: item.id })}>{t("entry.remove")}</button>
             </li>)}</ul>
           </details>
         </> : <p className="empty">{t("entry.empty")}</p>}
         <div className="target-actions">
-          <button disabled={busy} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
-          <button className="quiet" disabled={busy} onClick={() => command("finder_selection")}>{t("entry.finder")}</button>
+          <button disabled={busy || paramsPending} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
+          <button className="quiet" disabled={busy || paramsPending} onClick={() => command("finder_selection")}>{t("entry.finder")}</button>
         </div>
         {entry?.reading && <p role="status" className="muted">{t("entry.reading")}</p>}
         {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
@@ -169,25 +180,26 @@ export default function App() {
           </select>
         </div>
         <div className="icon-grid" role="group" aria-label={t("badge.heading")}>
-          {matchingIcons.map(icon => <button key={icon.id} disabled={busy || textQueued} className="badge-choice" aria-pressed={badgeId === icon.id}
+          {matchingIcons.map(icon => <button key={icon.id} disabled={busy || textQueued || paramsPending} className="badge-choice" aria-pressed={badgeId === icon.id}
             onClick={() => command("select_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null, badgeId: icon.id })}>
             <img src={thumbnails[`./assets/${icon.id}.svg`]} alt="" />{t(icon.name)}
           </button>)}
         </div>
         {matchingIcons.length === 0 && <p role="status" className="empty">{t("icons.empty")}</p>}
         <div className="target-actions">
-          <button disabled={busy || textQueued || entry?.importing} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
+          <button disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
         </div>
-        {session && <TextBadge session={session} disabled={busy} refresh={refreshSession} onPending={onTextPending} />}
+        {session && <TextBadge session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         {!icons.some(icon => icon.id === badgeId) && entry?.badge.text == null && <p className="muted">{t("badge.imported")}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
         {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
-        {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
+        {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
       </section>
       <section aria-labelledby="preview-heading">
         <h2 id="preview-heading">{t("preview.heading")}</h2>
-        <Preview locale={locale} source={badgeSource} badgeId={badgeId} onReady={onPreviewReady} />
+        <Preview locale={locale} source={badgeSource} badgeId={badgeId} params={renderParams} onReady={onPreviewReady} />
+        {session && <Adjustments session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} />}
       </section>
       {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
       {progress && <section className="card" aria-live="polite" aria-atomic="true">
@@ -211,7 +223,7 @@ export default function App() {
       </section>}
       {prepared && !prepared.confirmationToken && <button disabled={submitting} onClick={() => void confirm(true)}>{t("operation.cancel")}</button>}
       <footer>
-        <button className="quiet" disabled={busy || textQueued || entry?.importing || !entry?.items.length || !!progress} onClick={() => void start(true)}>{t("operation.restore")}</button>
+        <button className="quiet" disabled={busy || textQueued || paramsPending || entry?.importing || !entry?.items.length || !!progress} onClick={() => void start(true)}>{t("operation.restore")}</button>
         <button className="primary" disabled={busy || !entry?.items.length || !previewReady || !!progress} onClick={() => void start(false)}>{t("apply.action")}</button>
       </footer>
       <dialog ref={dialog} aria-labelledby="confirm-title" aria-describedby="confirm-warning" onCancel={event => { event.preventDefault(); void confirm(true); }}>
