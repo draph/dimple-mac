@@ -572,6 +572,11 @@ pub fn get_badge_mask<R: tauri::Runtime>(
     s.mask
         .as_ref()
         .map(|m| m.png.clone())
+        .or_else(|| {
+            crate::builtins::builtin(&badge_id)
+                .and_then(|bytes| crate::assets::svg_mask(bytes).ok())
+                .map(|m| m.png)
+        })
         .ok_or_else(|| AppError::reason("invalid_input", "asset"))
 }
 #[tauri::command]
@@ -583,13 +588,20 @@ pub fn select_badge<R: tauri::Runtime>(
 ) -> Result<(), AppError> {
     let inbox = app.state::<Inbox>();
     let mut s = inbox.0.lock().unwrap();
-    if badge_id != "code" && badge_id != s.badge.id {
+    let builtin = crate::builtins::builtin(&badge_id);
+    if builtin.is_none() && badge_id != s.badge.id {
         return Err(AppError::reason("invalid_input", "asset"));
     }
+    let mask = builtin.map(crate::assets::svg_mask).transpose()?;
     accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
-    if badge_id == "code" {
-        s.badge = Badge::default();
-        s.mask = None;
+    if let Some(mask) = mask {
+        s.badge = Badge {
+            id: badge_id,
+            width: mask.width,
+            height: mask.height,
+            opaque: false,
+        };
+        s.mask = Some(std::sync::Arc::new(mask));
     }
     s.badge_error = None;
     commit_update(&app, s);
@@ -2002,7 +2014,34 @@ mod tests {
         )
         .unwrap();
         assert!(ipc("get_badge_mask", json!({"badgeId":id})).is_err());
-        assert!(app.state::<super::Inbox>().0.lock().unwrap().mask.is_none());
+        assert!(app.state::<super::Inbox>().0.lock().unwrap().mask.is_some());
+        for (badge, _) in crate::builtins::BUILTINS {
+            let snapshot = ipc("get_session", json!({})).unwrap();
+            let revision = snapshot["entry"]["editRevision"].as_u64().unwrap();
+            assert!(
+                ipc(
+                    "select_badge",
+                    json!({"expectedEditRevision":revision-1,"operationId":null,"badgeId":badge})
+                )
+                .is_err()
+            );
+            ipc(
+                "select_badge",
+                json!({"expectedEditRevision":revision,"operationId":null,"badgeId":badge}),
+            )
+            .unwrap();
+            let snapshot = ipc("get_session", json!({})).unwrap();
+            assert_eq!(snapshot["entry"]["badge"]["id"], *badge);
+            assert_eq!(snapshot["entry"]["editRevision"], revision + 1);
+            assert_eq!(snapshot["entry"]["items"].as_array().unwrap().len(), 3);
+            assert!(
+                ipc("get_badge_mask", json!({"badgeId":badge}))
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .starts_with("iVBOR")
+            );
+        }
     }
     #[test]
     fn badge_input_keeps_the_current_targets() {

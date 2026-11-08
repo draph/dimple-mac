@@ -4,7 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Session } from "./i18n";
 import { Preview, exportImages } from "./Preview";
 import "./App.css";
-import codeUrl from "./assets/code.svg";
+import { icons, categories, searchIcons } from "./icons";
+
+const thumbnails = import.meta.glob<string>("./assets/*.svg", { query: "?url", import: "default", eager: true });
 
 import { acceptSession, sameContext, sameDraft } from "./session";
 import type { PreparedOperation, PrepareOperation } from "./contracts";
@@ -15,6 +17,8 @@ export default function App() {
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
   const [readyBadgeId, setReadyBadgeId] = useState<string | null>(null);
   const [imported, setImported] = useState<{ id: string; url: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
   const onPreviewReady = useCallback((id: string, ready: boolean) => setReadyBadgeId(ready ? id : null), []);
   const [submitting, setSubmitting] = useState(false);
   const submitGuard = useRef(false);
@@ -30,15 +34,16 @@ export default function App() {
     return current.current;
   }, []);
   const locale = session?.locale ?? "en";
+  const matchingIcons = searchIcons(query, category);
   const entry = session?.entry;
   const badgeId = entry?.badge.id ?? "code";
-  const badgeSource = badgeId === "code" ? codeUrl : imported?.id === badgeId ? imported.url : null;
+  const badgeSource = imported?.id === badgeId ? imported.url : null;
   const previewReady = readyBadgeId === badgeId && !!badgeSource && !entry?.badgeError && !entry?.importing;
   useEffect(() => {
     let active = true;
     let url: string | undefined;
     setImported(null);
-    if (badgeId !== "code") {
+    if (entry) {
       void invoke<string>("get_badge_mask", { badgeId }).then(png => {
         if (!active) return;
         const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
@@ -47,7 +52,7 @@ export default function App() {
       }).catch(error => { if (active) setFailure({ error }); });
     }
     return () => { active = false; if (url) URL.revokeObjectURL(url); };
-  }, [badgeId]);
+  }, [badgeId, !!entry]);
   const operation = session?.operation;
   const t = (key: string) => translate(locale, key);
   useEffect(() => {
@@ -151,11 +156,24 @@ export default function App() {
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <h2 id="badge-heading">{t("badge.heading")}</h2>
+        <div className="icon-filters">
+          <input type="search" aria-label={t("icons.search")} placeholder={t("icons.search")} value={query} onChange={event => setQuery(event.target.value)} />
+          <select aria-label={t("icons.category")} value={category} onChange={event => setCategory(event.target.value)}>
+            <option value="">{t("icons.all")}</option>
+            {categories.map(id => <option key={id} value={id}>{t(`category.${id}`)}</option>)}
+          </select>
+        </div>
+        <div className="icon-grid" role="group" aria-label={t("badge.heading")}>
+          {matchingIcons.map(icon => <button key={icon.id} disabled={busy} className="badge-choice" aria-pressed={badgeId === icon.id}
+            onClick={() => command("select_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null, badgeId: icon.id })}>
+            <img src={thumbnails[`./assets/${icon.id}.svg`]} alt="" />{t(icon.name)}
+          </button>)}
+        </div>
+        {matchingIcons.length === 0 && <p role="status" className="empty">{t("icons.empty")}</p>}
         <div className="target-actions">
-          <button disabled={busy} onClick={() => command("select_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null, badgeId: "code" })} className="badge-choice" aria-pressed={badgeId === "code"}><span aria-hidden="true">&lt;/&gt;</span>{t("badge.code")}</button>
           <button disabled={busy} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
         </div>
-        {badgeId !== "code" && <p className="muted">{t("badge.imported")}</p>}
+        {!icons.some(icon => icon.id === badgeId) && <p className="muted">{t("badge.imported")}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
         {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}

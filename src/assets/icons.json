@@ -1,0 +1,269 @@
+[
+  {
+    "id": "code",
+    "category": "development",
+    "name": "icon.code",
+    "keywords": [
+      "编程",
+      "源码",
+      "programming",
+      "source",
+      "html"
+    ],
+    "source": "src/assets/code.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "terminal",
+    "category": "development",
+    "name": "icon.terminal",
+    "keywords": [
+      "命令行",
+      "控制台",
+      "command",
+      "shell",
+      "console"
+    ],
+    "source": "src/assets/terminal.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "database",
+    "category": "development",
+    "name": "icon.database",
+    "keywords": [
+      "数据",
+      "存储",
+      "storage",
+      "sql"
+    ],
+    "source": "src/assets/database.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "branch",
+    "category": "development",
+    "name": "icon.branch",
+    "keywords": [
+      "版本",
+      "合并",
+      "git",
+      "version",
+      "merge"
+    ],
+    "source": "src/assets/branch.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "bug",
+    "category": "development",
+    "name": "icon.bug",
+    "keywords": [
+      "虫子",
+      "调试",
+      "debug",
+      "insect"
+    ],
+    "source": "src/assets/bug.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "wrench",
+    "category": "tools",
+    "name": "icon.wrench",
+    "keywords": [
+      "维修",
+      "修理",
+      "repair",
+      "fix"
+    ],
+    "source": "src/assets/wrench.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "hammer",
+    "category": "tools",
+    "name": "icon.hammer",
+    "keywords": [
+      "建造",
+      "敲击",
+      "build",
+      "strike"
+    ],
+    "source": "src/assets/hammer.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "scissors",
+    "category": "tools",
+    "name": "icon.scissors",
+    "keywords": [
+      "裁剪",
+      "剪切",
+      "cut",
+      "crop"
+    ],
+    "source": "src/assets/scissors.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "ruler",
+    "category": "tools",
+    "name": "icon.ruler",
+    "keywords": [
+      "测量",
+      "尺子",
+      "measure",
+      "length"
+    ],
+    "source": "src/assets/ruler.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "key",
+    "category": "tools",
+    "name": "icon.key",
+    "keywords": [
+      "解锁",
+      "密钥",
+      "unlock",
+      "password"
+    ],
+    "source": "src/assets/key.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "arrow-up",
+    "category": "arrows",
+    "name": "icon.arrow-up",
+    "keywords": [
+      "上升",
+      "北",
+      "rise",
+      "north"
+    ],
+    "source": "src/assets/arrow-up.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "arrow-down",
+    "category": "arrows",
+    "name": "icon.arrow-down",
+    "keywords": [
+      "下降",
+      "南",
+      "fall",
+      "south"
+    ],
+    "source": "src/assets/arrow-down.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "arrow-left",
+    "category": "arrows",
+    "name": "icon.arrow-left",
+    "keywords": [
+      "返回",
+      "西",
+      "back",
+      "west"
+    ],
+    "source": "src/assets/arrow-left.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "arrow-right",
+    "category": "arrows",
+    "name": "icon.arrow-right",
+    "keywords": [
+      "前进",
+      "东",
+      "forward",
+      "east"
+    ],
+    "source": "src/assets/arrow-right.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "refresh",
+    "category": "arrows",
+    "name": "icon.refresh",
+    "keywords": [
+      "刷新",
+      "同步",
+      "循环",
+      "reload",
+      "sync",
+      "repeat"
+    ],
+    "source": "src/assets/refresh.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "play",
+    "category": "media",
+    "name": "icon.play",
+    "keywords": [
+      "开始",
+      "视频",
+      "start",
+      "video"
+    ],
+    "source": "src/assets/play.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "pause",
+    "category": "media",
+    "name": "icon.pause",
+    "keywords": [
+      "停止",
+      "等待",
+      "stop",
+      "wait"
+    ],
+    "source": "src/assets/pause.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "music",
+    "category": "media",
+    "name": "icon.music",
+    "keywords": [
+      "音符",
+      "歌曲",
+      "audio",
+      "song",
+      "note"
+    ],
+    "source": "src/assets/music.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "camera",
+    "category": "media",
+    "name": "icon.camera",
+    "keywords": [
+      "照片",
+      "摄影",
+      "photo",
+      "picture"
+    ],
+    "source": "src/assets/camera.svg",
+    "license": "MIT"
+  },
+  {
+    "id": "microphone",
+    "category": "media",
+    "name": "icon.microphone",
+    "keywords": [
+      "录音",
+      "语音",
+      "record",
+      "voice",
+      "mic"
+    ],
+    "source": "src/assets/microphone.svg",
+    "license": "MIT"
+  }
+]

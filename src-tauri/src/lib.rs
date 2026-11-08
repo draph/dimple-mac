@@ -1,4 +1,5 @@
 mod assets;
+mod builtins;
 mod entry;
 mod icon;
 mod instance;

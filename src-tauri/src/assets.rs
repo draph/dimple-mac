@@ -185,7 +185,7 @@ fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<Mask, AppEr
     })
 }
 
-fn svg_mask(bytes: &[u8]) -> Result<Mask, AppError> {
+pub fn svg_mask(bytes: &[u8]) -> Result<Mask, AppError> {
     let text = std::str::from_utf8(bytes).map_err(|_| error("damaged"))?;
     let doc = roxmltree::Document::parse(text).map_err(|_| error("damaged"))?;
     let (width, height) = validate_svg(&doc)?;
