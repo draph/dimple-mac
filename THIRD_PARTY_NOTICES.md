@@ -14,7 +14,10 @@ identifiers are maintained in that manifest.
 - Project: [lgarron/folderify](https://github.com/lgarron/folderify).
 - Pinned commit: `16de35dd0ee94be4eae046dde709949b5d779e48`.
 - Selected default: `src/resources/folders/GenericFolderIcon.BigSur.iconset/`
-  in the read-only `upstream/folderify` submodule (all ten PNG files).
+  in the pinned upstream repository (all ten PNG files).
+- Vendored location: `src/folder-templates/GenericFolderIcon.BigSur.iconset/`;
+  the files are byte-for-byte copies of the pinned commit. Per-file SHA-256
+  values are in `SHA256SUMS` in that directory.
 - Style: Big Sur, light, native blue; fixed across system versions.
 - License basis: the pinned repository's [MIT declaration](https://github.com/lgarron/folderify/blob/16de35dd0ee94be4eae046dde709949b5d779e48/LICENSE.md).
 
@@ -28,8 +31,10 @@ are selected for inclusion.
 The application bundles all ten PNGs from the selected iconset (16–1024 pixels,
 including Retina variants) for preview and icon generation. This notice,
 including the upstream license text below, accompanies the distributed
-application. Dependency notices remain to be completed in T22; this file is not
-a complete dependency inventory.
+application. The development-only reference images under
+`tests/visual-baselines/upstream-reference/` are not packaged. Dependency
+notices remain to be completed in T22; this file is not a complete dependency
+inventory.
 
 The pinned upstream license contains the following text, without a separate
 copyright line:

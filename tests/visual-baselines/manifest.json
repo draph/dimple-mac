@@ -1,8 +1,10 @@
 {
   "template": {
     "id": "big-sur-light-blue",
-    "asset": "upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset",
-    "upstreamCommit": "16de35dd0ee94be4eae046dde709949b5d779e48"
+    "asset": "src/folder-templates/GenericFolderIcon.BigSur.iconset",
+    "source": "upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset",
+    "upstreamCommit": "16de35dd0ee94be4eae046dde709949b5d779e48",
+    "sha256Sums": "src/folder-templates/GenericFolderIcon.BigSur.iconset/SHA256SUMS"
   },
   "environment": {
     "macOS": "26.6.2 (25G83)",

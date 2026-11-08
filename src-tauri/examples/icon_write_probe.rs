@@ -42,7 +42,7 @@ const TYPES: [(&str, &str, u32); 10] = [
 // Fixed, trusted repository PNGs only; this is not an untrusted input parser.
 fn encode() -> Result<Vec<u8>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset");
+        .join("../src/folder-templates/GenericFolderIcon.BigSur.iconset");
     let mut bytes = Vec::from(&b"icns\0\0\0\0"[..]);
     for (kind, name, size) in TYPES {
         let png = fs::read(root.join(format!("icon_{name}.png")))?;
@@ -348,7 +348,7 @@ fn run() -> Result<()> {
             .join("probe.iconset")
             .join(format!("icon_{name}.png"));
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset")
+            .join("../src/folder-templates/GenericFolderIcon.BigSur.iconset")
             .join(format!("icon_{name}.png"));
         let decoded = pixels(&png)?;
         assert_eq!((decoded.0, decoded.1), (size, size));

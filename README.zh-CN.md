@@ -82,11 +82,10 @@ Finder 不在前台时，请手动选择目标。手动选择的目标在重新�
 使用 Node.js 24、npm 12、`rust-toolchain.toml` 固定的 Rust 工具链，以及带 macOS SDK 的 Xcode 或 Command Line Tools。尚未安装 Rust 时，先通过 [rustup.rs](https://rustup.rs/) 安装。依赖由 npm 和 Cargo lockfile 固定。
 
 ```sh
-git clone --recurse-submodules https://github.com/draph/folderify-desktop.git
+git clone https://github.com/draph/folderify-desktop.git
 cd folderify-desktop
 source "$HOME/.cargo/env"
 npm ci
-git submodule update --init --recursive
 npm run tauri dev
 ```
 
@@ -115,6 +114,6 @@ npm run tauri build -- --target universal-apple-darwin
 
 ## 许可与上游
 
-项目代码采用 [MIT 许可](LICENSE)。只读参考子模块 `upstream/folderify` 固定提交为 `16de35dd0ee94be4eae046dde709949b5d779e48`；默认模板为该子模块中的 `src/resources/folders/GenericFolderIcon.BigSur.iconset/`。
+项目代码采用 [MIT 许可](LICENSE)。默认模板已内联到 `src/folder-templates/GenericFolderIcon.BigSur.iconset/`，逐字节来自固定的上游 `folderify` 提交 `16de35dd0ee94be4eae046dde709949b5d779e48`。构建不再需要 Git 子模块；逐文件哈希和来源见该目录及[第三方声明](THIRD_PARTY_NOTICES.md)。
 
 项目以上游固定仓库的 MIT 声明作为所选模板的使用依据。资源来源、上游许可原文及已记录的限制见[第三方声明](THIRD_PARTY_NOTICES.md)。其他第三方素材保留各自许可。

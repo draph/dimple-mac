@@ -1824,7 +1824,7 @@ mod tests {
         assert!(ipc("prepare_operation",json!({"request":json!({"revision":e["revision"],"targetIds":["forged"],"action":{"type":"restore"}}).to_string()})).is_err());
         use base64::Engine as _;
         let images:Vec<_>=[(16,"16x16"),(32,"16x16@2x"),(64,"32x32@2x"),(128,"128x128"),(256,"128x128@2x"),(512,"256x256@2x"),(1024,"512x512@2x")].into_iter().map(|(size,name)|{
-            let file=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset/icon_{name}.png"));
+            let file=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../src/folder-templates/GenericFolderIcon.BigSur.iconset/icon_{name}.png"));
             json!({"size":size,"png":base64::engine::general_purpose::STANDARD.encode(std::fs::read(file).unwrap())})
         }).collect();
         let applied=prepare(json!({"type":"apply","templateId":"big-sur-light-blue","badgeId":"code","params":{"scale":1,"offsetX":0,"offsetY":0,"theme":"native"},"images":images})).unwrap();

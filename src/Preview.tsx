@@ -63,7 +63,7 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
   ctx.drawImage(layer, 0, 0);
 }
 
-const templates = import.meta.glob<string>("../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset/*.png", { eager: true, query: "?url", import: "default" });
+const templates = import.meta.glob<string>("./folder-templates/GenericFolderIcon.BigSur.iconset/*.png", { eager: true, query: "?url", import: "default" });
 async function load(url: string): Promise<HTMLImageElement> {
   const image = new Image(); image.src = url; await image.decode(); return image;
 }
@@ -71,7 +71,7 @@ async function load(url: string): Promise<HTMLImageElement> {
 const decodedTemplates = new Map<string, Promise<HTMLImageElement>>();
 function template(size: number) {
   const names: Record<number, string> = Object.fromEntries([[16,"16x16"],[32,"16x16@2x"],[64,"32x32@2x"],[128,"128x128"],[256,"128x128@2x"],[512,"256x256@2x"],[1024,"512x512@2x"]]);
-  const url = templates[`../upstream/folderify/src/resources/folders/GenericFolderIcon.BigSur.iconset/icon_${names[size]}.png`];
+  const url = templates[`./folder-templates/GenericFolderIcon.BigSur.iconset/icon_${names[size]}.png`];
   if (!decodedTemplates.has(url)) decodedTemplates.set(url, load(url).catch(error => { decodedTemplates.delete(url); throw error; }));
   return decodedTemplates.get(url)!;
 }

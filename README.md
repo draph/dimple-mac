@@ -82,11 +82,10 @@ The app follows the preferred supported language macOS resolves for it: Simplifi
 Use Node.js 24, npm 12, the Rust toolchain pinned in `rust-toolchain.toml`, and Xcode or Command Line Tools with the macOS SDK. Install Rust from [rustup.rs](https://rustup.rs/) if needed. Dependencies are pinned by the npm and Cargo lockfiles.
 
 ```sh
-git clone --recurse-submodules https://github.com/draph/folderify-desktop.git
+git clone https://github.com/draph/folderify-desktop.git
 cd folderify-desktop
 source "$HOME/.cargo/env"
 npm ci
-git submodule update --init --recursive
 npm run tauri dev
 ```
 
@@ -115,6 +114,6 @@ If you want system default icons, restore them in the app before uninstalling. Q
 
 ## License and upstream
 
-Project code is [MIT-licensed](LICENSE). The read-only `upstream/folderify` submodule is pinned to `16de35dd0ee94be4eae046dde709949b5d779e48`; the selected default is `src/resources/folders/GenericFolderIcon.BigSur.iconset/` within that submodule.
+Project code is [MIT-licensed](LICENSE). The default template is vendored under `src/folder-templates/GenericFolderIcon.BigSur.iconset/`, copied byte-for-byte from the pinned upstream `folderify` commit `16de35dd0ee94be4eae046dde709949b5d779e48`. The build does not require a Git submodule; per-file hashes and provenance are recorded in that directory and in the [third-party notices](THIRD_PARTY_NOTICES.md).
 
 The project uses the pinned upstream repository's MIT declaration as the selected template's license basis. Resource sources, the upstream license text, and its documented limitations are in [third-party notices](THIRD_PARTY_NOTICES.md). Other third-party assets retain their own licenses.
