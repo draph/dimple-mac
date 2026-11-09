@@ -100,6 +100,7 @@
   "operation.result": "成功 {succeeded}，失败 {failed}，未执行 {pending}，结果待确认 {unknown}。",
   "operation.checking": "正在复核目标与确认信息…",
   "operation.slow": "耗时较长，正在等待系统完成。",
+  "operation.waiting": "系统仍在处理，请稍候。",
   "operation.uncertain": "系统写入结果待确认，已阻止进一步写入。请退出并重新打开应用后再试。",
   "operation.stop": "停止剩余项",
   "operation.retry": "重试失败项",

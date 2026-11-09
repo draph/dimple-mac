@@ -1426,12 +1426,17 @@ fn execute_operation<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     p: std::sync::Arc<operation::Prepared>,
 ) {
-    execute_with_writer(app, p, crate::icon::write);
+    execute_with_writer(app, p, crate::icon::write, WRITE_WAIT);
 }
+const WRITE_WAIT: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(10),
+    std::time::Duration::from_secs(20),
+];
 fn execute_with_writer<R: tauri::Runtime, F>(
     app: tauri::AppHandle<R>,
     p: std::sync::Arc<operation::Prepared>,
     write: F,
+    waits: [std::time::Duration; 2],
 ) where
     F: Fn(&targets::Target, &crate::icon::Fingerprint, Option<&[u8]>) -> Result<(), AppError>
         + Clone
@@ -1512,25 +1517,20 @@ fn execute_with_writer<R: tauri::Runtime, F>(
             );
             let _ = tx.send(result);
         });
-        let result = wait_for_write(
-            rx,
-            std::time::Duration::from_secs(10),
-            std::time::Duration::from_secs(20),
-            |unknown| {
-                progress(&app, |v| {
-                    v.slow = true;
-                    if unknown {
-                        let item = v
-                            .items
-                            .iter_mut()
-                            .find(|i| i.target_id == p.targets[index].id)
-                            .unwrap();
-                        item.status = "unknown".into();
-                        v.stopped = true;
-                    }
-                });
-            },
-        );
+        let result = wait_for_write(rx, waits[0], waits[1], |unknown| {
+            progress(&app, |v| {
+                v.slow = true;
+                if unknown {
+                    let item = v
+                        .items
+                        .iter_mut()
+                        .find(|i| i.target_id == p.targets[index].id)
+                        .unwrap();
+                    item.status = "unknown".into();
+                    v.stopped = true;
+                }
+            });
+        });
         // A missing result means the writer died and may still have written; fail closed.
         let uncertain = result.as_ref().is_none_or(|r| {
             r.as_ref()
@@ -1930,6 +1930,25 @@ mod tests {
             )),
             None
         );
+        let (tx, rx) = mpsc::channel();
+        tx.send(7).unwrap();
+        assert_eq!(
+            super::wait_for_write(rx, Duration::ZERO, Duration::ZERO, |_| panic!(
+                "an available result needs no slow feedback"
+            )),
+            Some(7)
+        );
+        let (tx, rx) = mpsc::channel();
+        let mut tx = Some(tx);
+        let mut feedback = Vec::new();
+        assert_eq!(
+            super::wait_for_write(rx, Duration::ZERO, Duration::ZERO, |unknown| {
+                feedback.push(unknown);
+                tx.take().unwrap().send(9).unwrap();
+            }),
+            Some(9)
+        );
+        assert_eq!(feedback, vec![false]);
     }
     #[test]
     fn operation_claim_rejects_stale_ids_duplicates_and_busy_inputs() {
@@ -2460,7 +2479,12 @@ mod tests {
             };
             let p = claimed(&app, p);
             let old_id = p.id.clone();
-            super::execute_with_writer(app.handle().clone(), p.clone(), writer.clone());
+            super::execute_with_writer(
+                app.handle().clone(),
+                p.clone(),
+                writer.clone(),
+                super::WRITE_WAIT,
+            );
             {
                 let inbox = app.state::<super::Inbox>();
                 let s = inbox.0.lock().unwrap();
@@ -2480,7 +2504,12 @@ mod tests {
             let unavailable = recovery(&app, super::RecoveryMode::RetryFailed);
             assert!(unavailable.fingerprints[0].is_err());
             let unavailable = claimed(&app, unavailable);
-            super::execute_with_writer(app.handle().clone(), unavailable, writer.clone());
+            super::execute_with_writer(
+                app.handle().clone(),
+                unavailable,
+                writer.clone(),
+                super::WRITE_WAIT,
+            );
             std::fs::rename(&displaced, &second).unwrap();
             let renewed = recovery(&app, super::RecoveryMode::RetryFailed);
             assert!(
@@ -2494,7 +2523,12 @@ mod tests {
                 matches!(renewed.request.action, crate::operation::Action::Restore {}) == restore
             );
             let renewed = claimed(&app, renewed);
-            super::execute_with_writer(app.handle().clone(), renewed.clone(), writer);
+            super::execute_with_writer(
+                app.handle().clone(),
+                renewed.clone(),
+                writer,
+                super::WRITE_WAIT,
+            );
             assert_eq!(
                 *calls.lock().unwrap(),
                 vec![
@@ -2541,6 +2575,7 @@ mod tests {
                     super::stop_operation(handle.clone(), id.clone()).unwrap();
                     result
                 },
+                super::WRITE_WAIT,
             );
             {
                 let inbox = app.state::<super::Inbox>();
@@ -2577,12 +2612,153 @@ mod tests {
                     recorded.lock().unwrap().push(target.id.clone());
                     crate::icon::write(target, expected, icon)
                 },
+                super::WRITE_WAIT,
             );
             assert_eq!(*calls.lock().unwrap(), ids);
             let inbox = app.state::<super::Inbox>();
             let mut s = inbox.0.lock().unwrap();
             assert!(super::all_succeeded(&s));
             assert!(super::claim_commit(&mut s, &cancelled_id, None).is_err());
+        }
+    }
+    #[test]
+    fn overdue_batches_block_reentry_and_only_explicitly_resume_after_a_late_result() {
+        use std::{sync::mpsc, time::Duration};
+        use tauri::Manager;
+        let _serial = crate::icon::NATIVE_TEST_LOCK.lock().unwrap();
+        for restore in [false, true] {
+            for outcome in 0..4 {
+                let (_root, app, p) = batch(3, restore);
+                let p = claimed(&app, p);
+                let (release, gate) = mpsc::channel();
+                let gate = std::sync::Arc::new(std::sync::Mutex::new(gate));
+                let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                let recorded = calls.clone();
+                let handle = app.handle().clone();
+                let original = p.clone();
+                let worker = std::thread::spawn(move || {
+                    super::execute_with_writer(
+                        handle,
+                        original,
+                        move |target, _, icon| {
+                            recorded.lock().unwrap().push(target.id.clone());
+                            assert_eq!(icon.is_none(), restore);
+                            gate.lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(5))
+                                .unwrap();
+                            match outcome {
+                                0 => Ok(()),
+                                1 => Err(crate::icon::error("write")),
+                                2 => Err(crate::icon::error("uncertain")),
+                                _ => panic!("simulate a writer dying without a result"),
+                            }
+                        },
+                        [Duration::from_millis(1); 2],
+                    );
+                });
+                let inbox = app.state::<super::Inbox>();
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    let mut s = inbox.0.lock().unwrap();
+                    let v = s.operation.as_ref().unwrap();
+                    if v.items[0].status == "unknown" {
+                        assert_eq!(v.phase, "running");
+                        assert!(v.slow && v.stopped);
+                        assert_eq!(v.items[1].status, "pending");
+                        assert!(!super::operation_state(&s).can_retry);
+                        assert!(!super::operation_state(&s).can_continue);
+                        assert!(
+                            super::claim_commit(&mut s, &p.id, Some(&p.token))
+                                .unwrap()
+                                .is_none()
+                        );
+                        for mode in [
+                            super::RecoveryMode::RetryFailed,
+                            super::RecoveryMode::ContinuePending,
+                        ] {
+                            let revision = s.revision;
+                            assert!(super::begin_recovery(&mut s, &p.id, revision, mode).is_err());
+                        }
+                        let revision = s.edit_revision;
+                        assert!(super::accept_edit(&mut s, revision, Some(&p.id)).is_err());
+                        let ids: Vec<_> = s.items.iter().map(|i| i.id.clone()).collect();
+                        super::accept(&mut s, "services", targets().items);
+                        assert_eq!(
+                            s.items.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+                            ids
+                        );
+                        assert_eq!(super::plan_wake(&mut s, true), (false, false));
+                        break;
+                    }
+                    drop(s);
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "missing overdue feedback"
+                    );
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                assert!(!super::can_hide(app.handle()));
+                assert_eq!(*calls.lock().unwrap(), vec![p.targets[0].id.clone()]);
+                release.send(()).unwrap();
+                worker.join().unwrap();
+                {
+                    let s = inbox.0.lock().unwrap();
+                    let v = s.operation.as_ref().unwrap();
+                    assert!(!v.slow);
+                    assert!(v.stopped);
+                    assert_eq!(
+                        v.phase,
+                        if outcome < 2 {
+                            "completed"
+                        } else {
+                            "uncertain"
+                        }
+                    );
+                    assert_eq!(
+                        v.items[0].status,
+                        ["succeeded", "failed", "unknown", "unknown"][outcome]
+                    );
+                    assert_eq!(v.items[1].status, "pending");
+                    assert_eq!(v.items[2].status, "pending");
+                    assert_eq!(super::operation_state(&s).can_continue, outcome < 2);
+                    assert_eq!(super::operation_state(&s).can_retry, outcome == 1);
+                    assert_eq!(s.operation_locked(), outcome >= 2);
+                }
+                if outcome < 2 {
+                    let resumed = recovery(&app, super::RecoveryMode::ContinuePending);
+                    let ids: Vec<_> = resumed.targets.iter().map(|t| t.id.clone()).collect();
+                    assert_eq!(
+                        ids,
+                        p.targets[1..]
+                            .iter()
+                            .map(|t| t.id.clone())
+                            .collect::<Vec<_>>()
+                    );
+                    let resumed = claimed(&app, resumed);
+                    let recorded = calls.clone();
+                    super::execute_with_writer(
+                        app.handle().clone(),
+                        resumed,
+                        move |target, _, icon| {
+                            assert_eq!(icon.is_none(), restore);
+                            recorded.lock().unwrap().push(target.id.clone());
+                            Ok(())
+                        },
+                        super::WRITE_WAIT,
+                    );
+                    assert_eq!(
+                        *calls.lock().unwrap(),
+                        p.targets.iter().map(|t| t.id.clone()).collect::<Vec<_>>()
+                    );
+                }
+                for target in &p.targets {
+                    assert_eq!(
+                        std::fs::read(target.path.join("body.txt")).unwrap(),
+                        b"unchanged body"
+                    );
+                }
+            }
         }
     }
     #[test]
@@ -2678,6 +2854,7 @@ mod tests {
                 }
                 crate::icon::write(target, expected, icon)
             },
+            super::WRITE_WAIT,
         );
         let before = crate::icon::fingerprint(&p.targets[1].path).unwrap();
         {

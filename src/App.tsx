@@ -230,7 +230,7 @@ export default function App() {
         })}</p>
         {progress.phase === "checking" && <p>{t("operation.checking")}</p>}
         {progress.slow && <p>{t("operation.slow")}</p>}
-        {progress.items.some(item => item.status === "unknown") && <p role="alert">{t("operation.uncertain")}</p>}
+        {progress.items.some(item => item.status === "unknown") && <p role="alert">{t(progress.phase === "running" ? "operation.waiting" : "operation.uncertain")}</p>}
         {progress.stopped && <p>{t("operation.stopped")}</p>}
         {progress.items.filter(item => item.status === "running" || item.status === "unknown").map(item => <p className="path" key={item.targetId}>{entry?.items.find(t => t.id === item.targetId)?.path}</p>)}
         <details><summary>{t("operation.details")}</summary><ul className="operation-results">{progress.items.map(item => <li key={item.targetId}>

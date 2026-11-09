@@ -100,6 +100,7 @@
   "operation.result": "Succeeded: {succeeded}; failed: {failed}; not started: {pending}; uncertain: {unknown}.",
   "operation.checking": "Rechecking targets and confirmation…",
   "operation.slow": "Taking longer than usual. Waiting for macOS to finish.",
+  "operation.waiting": "macOS is still processing. Please wait.",
   "operation.uncertain": "The write result is uncertain. Further writes are blocked. Quit and reopen the app before trying again.",
   "operation.stop": "Stop remaining items",
   "operation.retry": "Retry failed items",
