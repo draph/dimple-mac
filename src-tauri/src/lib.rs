@@ -180,6 +180,8 @@ pub fn run() {
             entry::finder_selection,
             entry::remove_target,
             entry::prepare_operation,
+            entry::prepare_recovery,
+            entry::stop_operation,
             entry::cancel_prepared,
             entry::get_operation,
             entry::commit_operation

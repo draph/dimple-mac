@@ -127,6 +127,23 @@ export default function App() {
       if (generation === epoch.current) { submitGuard.current = false; setSubmitting(false); }
     }
   };
+  const recover = async (mode: "retry_failed" | "continue_pending") => {
+    if (submitGuard.current || busy || textQueued || paramsPending || !progress || !session) return;
+    const generation = epoch.current;
+    const before = current.current;
+    submitGuard.current = true; setSubmitting(true); setFailure(null);
+    try {
+      const p = await invoke<PreparedOperation>("prepare_recovery", { operationId: progress.operationId, expectedRevision: session.entry.revision, mode });
+      if (generation !== epoch.current) return;
+      if (p.confirmationToken) await refreshSession(generation);
+      else await commit(p, generation);
+    } catch (error) {
+      if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error });
+      await refreshSession(generation).catch(() => {});
+    } finally {
+      if (generation === epoch.current) { submitGuard.current = false; setSubmitting(false); }
+    }
+  };
   const confirm = async (cancel: boolean) => {
     if (!prepared || submitGuard.current) return;
     const generation = epoch.current;
@@ -223,8 +240,13 @@ export default function App() {
       </section>}
       {prepared && !prepared.confirmationToken && <button disabled={submitting} onClick={() => void confirm(true)}>{t("operation.cancel")}</button>}
       <footer>
+        {operation?.canStop && <button disabled={submitting} onClick={() => command("stop_operation", { operationId: progress!.operationId })}>{t("operation.stop")}</button>}
+        {operation?.canRetry && <button disabled={busy || textQueued || paramsPending} onClick={() => void recover("retry_failed")}>{t("operation.retry")}</button>}
+        {operation?.canContinue && <button disabled={busy || textQueued || paramsPending} onClick={() => void recover("continue_pending")}>{t("operation.continue")}</button>}
+        {!progress && <>
         <button className="quiet" disabled={busy || textQueued || paramsPending || entry?.importing || !entry?.items.length || !!progress} onClick={() => void start(true)}>{t("operation.restore")}</button>
         <button className="primary" disabled={busy || !entry?.items.length || !previewReady || !!progress} onClick={() => void start(false)}>{t("apply.action")}</button>
+        </>}
       </footer>
       <dialog ref={dialog} aria-labelledby="confirm-title" aria-describedby="confirm-warning" onCancel={event => { event.preventDefault(); void confirm(true); }}>
         <h2 id="confirm-title">{t(prepared?.restore ? "operation.confirmRestore" : "operation.confirmApply")}</h2>

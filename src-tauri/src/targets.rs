@@ -49,7 +49,7 @@ pub struct Checked {
     pub mask: Option<crate::assets::Mask>,
     pub items: Vec<Target>,
     pub issues: Vec<Issue>,
-    pub fingerprints: Vec<crate::icon::Fingerprint>,
+    pub fingerprints: Vec<Result<crate::icon::Fingerprint, AppError>>,
 }
 #[derive(Serialize, Deserialize)]
 pub enum Request {
@@ -219,12 +219,15 @@ fn execute(request: Request) -> Result<Checked, AppError> {
         Request::Fingerprint(targets) => {
             let mut fingerprints = Vec::new();
             for target in &targets {
-                revalidate(target)?;
                 fingerprints.push(
-                    crate::icon::fingerprint(&target.actual_path)
-                        .map_err(|e| e.target(&target.id))?,
+                    (|| {
+                        revalidate(target)?;
+                        let fingerprint = crate::icon::fingerprint(&target.actual_path)?;
+                        revalidate(target)?;
+                        Ok(fingerprint)
+                    })()
+                    .map_err(|e: AppError| e.target(&target.id)),
                 );
-                revalidate(target)?;
             }
             Ok(Checked {
                 items: targets,

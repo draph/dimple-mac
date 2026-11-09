@@ -7,4 +7,4 @@ export type PrepareOperation = { revision: number; targetIds: string[]; action: 
 export type PreparedOperation = { operationId: string; targetIds: string[]; linkedTargetIds: string[]; overwriteTargetIds: string[]; restore: boolean; confirmationToken: string | null; commitAvailable: boolean };
 
 export type OperationProgress = { operationId: string; sequence: number; phase: "checking" | "running" | "uncertain" | "completed"; slow: boolean; stopped: boolean; items: { targetId: string; status: "pending" | "running" | "succeeded" | "failed" | "unknown"; error: AppError | null }[] };
-export type OperationState = { revision: number; prepared: PreparedOperation | null; progress: OperationProgress | null };
+export type OperationState = { canStop: boolean; canRetry: boolean; canContinue: boolean; revision: number; prepared: PreparedOperation | null; progress: OperationProgress | null };

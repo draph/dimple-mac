@@ -197,9 +197,10 @@ pub struct Prepared {
     pub request: Request,
     pub targets: Vec<Target>,
     pub icon: Option<Vec<u8>>,
-    pub fingerprints: Vec<crate::icon::Fingerprint>,
+    pub fingerprints: Vec<Result<crate::icon::Fingerprint, AppError>>,
     pub token: String,
-    pub force_confirmation: bool,
+    pub confirmation_ids: Option<Vec<String>>,
+    pub previous: Option<Progress>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -263,7 +264,8 @@ impl Prepared {
             icon: None,
             fingerprints: vec![],
             token: targets::next_id("confirmation"),
-            force_confirmation: false,
+            confirmation_ids: None,
+            previous: None,
         }
     }
     pub fn build(
@@ -288,32 +290,54 @@ impl Prepared {
         Ok(())
     }
     pub fn needs_confirmation(&self) -> bool {
-        self.force_confirmation
-            || matches!(self.request.action, Action::Restore {})
-            || self.targets.iter().any(|t| t.linked)
-            || self.fingerprints.iter().any(|f| f.has_icon())
+        if let Some(ids) = &self.confirmation_ids {
+            return !ids.is_empty();
+        }
+        self.targets.iter().zip(&self.fingerprints).any(|(t, f)| {
+            f.as_ref().is_ok_and(|f| {
+                matches!(self.request.action, Action::Restore {}) || t.linked || f.has_icon()
+            })
+        })
     }
     pub fn summary(&self) -> Summary {
+        let selected: Vec<_> = self
+            .targets
+            .iter()
+            .zip(&self.fingerprints)
+            .filter(|(t, f)| {
+                f.is_ok()
+                    && self
+                        .confirmation_ids
+                        .as_ref()
+                        .is_none_or(|ids| ids.contains(&t.id))
+            })
+            .collect();
         Summary {
             operation_id: self.id.clone(),
-            target_ids: self.targets.iter().map(|t| t.id.clone()).collect(),
-            linked_target_ids: self
-                .targets
+            target_ids: selected.iter().map(|(t, _)| t.id.clone()).collect(),
+            linked_target_ids: selected
                 .iter()
-                .filter(|t| t.linked)
-                .map(|t| t.id.clone())
+                .filter(|(t, _)| t.linked)
+                .map(|(t, _)| t.id.clone())
                 .collect(),
-            overwrite_target_ids: self
-                .targets
+            overwrite_target_ids: selected
                 .iter()
-                .zip(&self.fingerprints)
-                .filter(|(_, f)| f.has_icon())
+                .filter(|(_, f)| f.as_ref().is_ok_and(|f| f.has_icon()))
                 .map(|(t, _)| t.id.clone())
                 .collect(),
             restore: matches!(self.request.action, Action::Restore {}),
             confirmation_token: self.needs_confirmation().then(|| self.token.clone()),
             commit_available: true,
         }
+    }
+    pub fn changed_consent(&self, old: &Self) -> Vec<String> {
+        self.targets
+            .iter()
+            .zip(&self.fingerprints)
+            .zip(&old.fingerprints)
+            .filter(|((_, current), previous)| current.is_ok() && *current != *previous)
+            .map(|((t, _), _)| t.id.clone())
+            .collect()
     }
     pub fn refreshed(&self) -> Result<Self, AppError> {
         let mut p = self.clone();
