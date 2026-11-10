@@ -148,13 +148,7 @@ fn finish_success<R: tauri::Runtime>(app: &tauri::AppHandle<R>, token: &(String,
         return true;
     }
     if release_success(&mut s, token) {
-        // This runs on the main thread, so hide completes before a later input can show.
-        if !s.pinned
-            && let Some(w) = app.get_webview_window("main")
-            && w.hide().is_ok()
-        {
-            let _ = app.emit("panel-visibility", false);
-        }
+        hide_locked(app, &s, crate::panel::HideReason::Success);
         commit_update(app, s);
     }
     false
@@ -494,17 +488,19 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
     s.error = None;
 }
 pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    if let Some(w) = app.get_webview_window("main") {
-        if w.show().is_ok() {
-            let _ = app.emit("panel-visibility", true);
-        }
-        let _ = w.set_focus();
-    }
+    crate::panel::show(app, None);
 }
 pub fn wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     wake_from(app, crate::macos::finder_is_frontmost());
 }
 pub fn wake_from<R: tauri::Runtime>(app: &tauri::AppHandle<R>, finder: bool) {
+    wake_at(app, finder, None);
+}
+pub fn wake_at<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    finder: bool,
+    anchor: Option<(f64, f64)>,
+) {
     let hidden = app
         .get_webview_window("main")
         .is_some_and(|w| !w.is_visible().unwrap_or(true));
@@ -520,7 +516,7 @@ pub fn wake_from<R: tauri::Runtime>(app: &tauri::AppHandle<R>, finder: bool) {
         }
         (plan.0, expected_request)
     };
-    show(app);
+    crate::panel::show(app, anchor);
     if automatic {
         if finder {
             read_finder(app.clone(), true, Some(expected_request));
@@ -1620,10 +1616,50 @@ fn finish_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         app.exit(0);
     }
 }
-pub fn can_hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+fn allows_hide(s: &Snapshot, reason: crate::panel::HideReason) -> bool {
+    use crate::panel::HideReason;
+    if s.operation_locked() || candidate_pending(s) {
+        return false;
+    }
+    match reason {
+        HideReason::Explicit => true,
+        HideReason::Success => !s.pinned,
+        HideReason::Blur => {
+            !s.pinned
+                && s.error.is_none()
+                && s.badge_error.is_none()
+                && s.issues.is_empty()
+                && s.operation.as_ref().is_none_or(|_| all_succeeded(s))
+        }
+    }
+}
+fn hide_locked<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    s: &Snapshot,
+    reason: crate::panel::HideReason,
+) {
+    if allows_hide(s, reason)
+        && (reason == crate::panel::HideReason::Explicit || !crate::settings::protects_panel(app))
+        && let Some(w) = app.get_webview_window("main")
+        && w.hide().is_ok()
+    {
+        let _ = app.emit("panel-visibility", false);
+    }
+}
+pub fn hide_if_allowed<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    reason: crate::panel::HideReason,
+) {
     let inbox = app.state::<Inbox>();
     let s = inbox.0.lock().unwrap();
-    !s.operation_locked() && !s.preparing && !s.choosing && !s.importing
+    hide_locked(app, &s, reason);
+}
+#[cfg(test)]
+pub fn can_hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    allows_hide(
+        &app.state::<Inbox>().0.lock().unwrap(),
+        crate::panel::HideReason::Explicit,
+    )
 }
 
 #[cfg(test)]
@@ -1668,6 +1704,62 @@ mod tests {
         s.cleanup = Some((progress.operation_id.clone(), s.edit_revision));
         s.operation = Some(progress);
         s
+    }
+    #[test]
+    fn hiding_matrix_protects_candidates_writes_and_results_but_explicit_escape_ignores_pin() {
+        use crate::panel::HideReason::{Blur, Explicit, Success};
+        let mut s = super::Snapshot::default();
+        for reason in [Blur, Explicit, Success] {
+            assert!(super::allows_hide(&s, reason));
+        }
+        s.pinned = true;
+        assert!(!super::allows_hide(&s, Blur));
+        assert!(!super::allows_hide(&s, Success));
+        assert!(super::allows_hide(&s, Explicit));
+        for candidate in 0..6 {
+            let mut s = super::Snapshot::default();
+            match candidate {
+                0 => s.choosing = true,
+                1 => s.checking = true,
+                2 => s.importing = true,
+                3 => s.active_read = Some(1),
+                4 => s.preparing = true,
+                _ => {
+                    let request = crate::operation::parse(
+                        r#"{"revision":0,"targetIds":["x"],"action":{"type":"restore"}}"#,
+                    )
+                    .unwrap();
+                    s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
+                        request,
+                        vec![],
+                    )));
+                }
+            }
+            for reason in [Blur, Explicit, Success] {
+                assert!(!super::allows_hide(&s, reason));
+            }
+        }
+        for status in ["failed", "pending", "unknown", "succeeded"] {
+            let mut s = successful_state();
+            s.operation.as_mut().unwrap().items[0].status = status.into();
+            assert_eq!(super::allows_hide(&s, Blur), status == "succeeded");
+            assert!(super::allows_hide(&s, Explicit));
+            for phase in ["checking", "running", "uncertain"] {
+                s.operation.as_mut().unwrap().phase = phase.into();
+                for reason in [Blur, Explicit, Success] {
+                    assert!(!super::allows_hide(&s, reason));
+                }
+            }
+        }
+        let mut s = super::Snapshot {
+            error: Some("checkFailed".into()),
+            ..Default::default()
+        };
+        assert!(!super::allows_hide(&s, Blur));
+        assert!(super::allows_hide(&s, Explicit));
+        s.error = None;
+        s.badge_error = Some("checkFailed".into());
+        assert!(!super::allows_hide(&s, Blur));
     }
     #[test]
     fn render_param_edits_restore_snapshots_and_reject_stale_or_locked_edits() {

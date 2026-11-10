@@ -75,3 +75,12 @@ test("text errors have bounded bilingual mappings", () => {
     assert.equal(errorMessage(locale, {code: "text_error", params: {reason: "private"}}), translate(locale, "error.generic"));
   }
 });
+
+test("shortcut failures have bounded bilingual messages", () => {
+  for (const locale of ["en", "zh-Hans"] as const) {
+    for (const reason of ["invalid", "register", "unregister", "save", "rollback", "damaged", "restart", "capture"]) {
+      assert.equal(errorMessage(locale, { code: "shortcut_error", params: { reason } }), translate(locale, `settings.error.${reason}`));
+    }
+    assert.equal(errorMessage(locale, { code: "shortcut_error", params: { reason: "/private/path" } }), translate(locale, "error.generic"));
+  }
+});

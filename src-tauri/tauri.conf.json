@@ -18,7 +18,16 @@
         "height": 560,
         "minWidth": 360,
         "minHeight": 440,
-        "visible": false
+        "visible": false,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "popover"
+          ],
+          "state": "active",
+          "radius": 12
+        },
+        "minimizable": false
       }
     ],
     "security": {

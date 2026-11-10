@@ -1,5 +1,5 @@
 use crate::localization::Locale;
-use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem as Item, Submenu};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem as Item, Submenu};
 
 pub fn build(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri::Wry>> {
     let messages = locale.messages();
@@ -24,7 +24,7 @@ pub fn build(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri
                     &Item::separator(app)?,
                     &Item::services(app, Some(t("menu.services")))?,
                     &Item::separator(app)?,
-                    &Item::hide(app, Some(t("menu.hide")))?,
+                    &MenuItem::with_id(app, "hide-panel", t("menu.hide"), true, Some("Cmd+H"))?,
                     &Item::hide_others(app, Some(t("menu.hideOthers")))?,
                     &Item::show_all(app, Some(t("menu.showAll")))?,
                     &Item::separator(app)?,
@@ -63,7 +63,6 @@ pub fn build(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri
                 t("menu.window"),
                 true,
                 &[
-                    &Item::minimize(app, Some(t("menu.minimize")))?,
                     &Item::maximize(app, Some(t("menu.maximize")))?,
                     &Item::separator(app)?,
                     &Item::close_window(app, Some(t("menu.close")))?,
@@ -77,5 +76,23 @@ pub fn build(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri
                 &[],
             )?,
         ],
+    )
+}
+
+pub fn recording(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri::Wry>> {
+    let messages = locale.messages();
+    Menu::with_items(
+        app,
+        &[&Submenu::with_items(
+            app,
+            &messages["app.name"],
+            true,
+            &[&MenuItem::new(
+                app,
+                &messages["settings.recording"],
+                false,
+                None::<&str>,
+            )?],
+        )?],
     )
 }

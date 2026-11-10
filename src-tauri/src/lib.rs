@@ -7,11 +7,13 @@ pub mod localization;
 mod macos;
 mod native_menu;
 mod operation;
+mod panel;
+mod settings;
 mod targets;
 mod text;
 
 use localization::Locale;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 #[derive(Default)]
 struct TrayWake(std::sync::Mutex<Option<bool>>);
@@ -24,7 +26,7 @@ fn wake_from_tray(app: &tauri::AppHandle) {
         .unwrap()
         .take()
         .unwrap_or_else(macos::finder_is_frontmost);
-    entry::wake_from(app, finder);
+    entry::wake_at(app, finder, panel::tray_anchor(app));
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -80,8 +82,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _, event| {
-                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed
+                        && settings::handle(app, shortcut)
+                    {
                         entry::wake(app);
                     }
                 })
@@ -90,12 +94,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(entry::Inbox::default())
         .manage(TrayWake::default())
+        .manage(settings::Settings::default())
+        .on_menu_event(|app, event| {
+            if event.id.as_ref() == "hide-panel" {
+                panel::hide(app, panel::HideReason::Explicit);
+            }
+        })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                if entry::can_hide(window.app_handle()) && window.hide().is_ok() {
-                    let _ = window.emit("panel-visibility", false);
-                }
+                panel::hide(window.app_handle(), panel::HideReason::Explicit);
+            }
+            tauri::WindowEvent::Focused(false) => {
+                panel::hide(window.app_handle(), panel::HideReason::Blur)
             }
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
                 entry::receive(window.app_handle(), "window-drop", paths.clone())
@@ -111,10 +122,7 @@ pub fn run() {
                 version: env!("CARGO_PKG_VERSION"),
                 locale,
             });
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            if app.global_shortcut().register("Alt+KeyF").is_err() {
-                entry::error(app.handle(), "shortcutFailed");
-            }
+            settings::init(app.handle());
             let messages = locale.messages();
             let show = tauri::menu::MenuItem::with_id(
                 app,
@@ -123,17 +131,28 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            let settings_item = tauri::menu::MenuItem::with_id(
+                app,
+                "settings",
+                &messages["settings.title"],
+                true,
+                None::<&str>,
+            )?;
             let quit = tauri::menu::PredefinedMenuItem::quit(app, Some(&messages["menu.quit"]))?;
             let about =
                 tauri::menu::PredefinedMenuItem::about(app, Some(&messages["menu.about"]), None)?;
-            let menu = tauri::menu::Menu::with_items(app, &[&show, &about, &quit])?;
-            let tray = tauri::tray::TrayIconBuilder::new()
+            let menu = tauri::menu::Menu::with_items(app, &[&show, &settings_item, &about, &quit])?;
+            let tray = tauri::tray::TrayIconBuilder::with_id("main-tray")
                 .icon(tauri::include_image!("icons/tray-folder.png"))
                 .icon_as_template(true)
                 .tooltip(&messages["app.name"])
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| {
+                    if e.id.as_ref() == "settings" {
+                        panel::show(app, panel::tray_anchor(app));
+                        settings::open(app);
+                    }
                     if e.id.as_ref() == "show" {
                         wake_from_tray(app);
                     }
@@ -166,6 +185,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_session,
+            panel::request_hide_panel,
+            settings::get_shortcut_settings,
+            settings::save_shortcut_settings,
+            settings::set_shortcut_capture,
+            settings::open_settings,
+            settings::close_settings,
             quit_app,
             entry::get_entry,
             entry::begin_edit,

@@ -54,3 +54,6 @@ objc2 = "=0.6.5"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSImage", "NSWorkspace"] }
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSData", "NSFileCoordinator", "NSError", "block2"] }
 block2 = "=0.6.2"
+
+[patch.crates-io]
+global-hotkey = { path = "vendor/global-hotkey" }

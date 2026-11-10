@@ -1,0 +1,98 @@
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { errorMessage, translate, type Locale } from "./i18n";
+import { captureShortcut, displayShortcut, type ShortcutStatus, type ShortcutSettings as Value } from "./shortcut";
+
+export function ShortcutSettings({ locale }: { locale: Locale }) {
+  const [status, setStatus] = useState<ShortcutStatus | null>(null);
+  const [draft, setDraft] = useState<Value | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const capture = useRef(false);
+  const captureEpoch = useRef(0);
+  const section = useRef<HTMLElement>(null);
+  const t = (key: string) => translate(locale, key);
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      const value = await invoke<ShortcutStatus>("get_shortcut_settings");
+      if (active) { setStatus(value); setDraft(previous => previous ?? value.settings); }
+    };
+    const listener = listen("shortcut-settings", () => void refresh().catch(setFailure));
+    void listener.then(() => invoke("set_shortcut_capture", { capturing: false })).then(refresh).catch(setFailure);
+    return () => { active = false; void listener.then(fn => fn()).catch(() => {}); };
+  }, []);
+  const stopCapture = async () => {
+    ++captureEpoch.current;
+    capture.current = false; setCapturing(false);
+    await invoke("set_shortcut_capture", { capturing: false });
+  };
+  useEffect(() => {
+    const hidden = listen<boolean>("panel-visibility", event => { if (!event.payload && capture.current) void stopCapture().catch(setFailure); });
+    return () => { void hidden.then(fn => fn()).catch(() => {}); };
+  }, []);
+  const save = async () => {
+    if (!draft || saving) return;
+    setSaving(true); setFailure(null); setSaved(false);
+    try {
+      await stopCapture();
+      const value = await invoke<ShortcutStatus>("save_shortcut_settings", { settings: draft });
+      setStatus(value);
+      if (value.saved) { setDraft(value.settings); setSaved(true); }
+    } catch (error) { setFailure(error); }
+    finally { setSaving(false); }
+  };
+  useEffect(() => {
+    if (status?.open) { section.current?.scrollIntoView({ block: "start" }); input.current?.focus(); }
+  }, [status?.open]);
+  useEffect(() => {
+    const listener = listen<string>("shortcut-captured", event => {
+      if (capture.current) { setDraft(previous => previous && ({ ...previous, shortcut: event.payload })); setSaved(false); }
+    });
+    return () => { void listener.then(fn => fn()).catch(() => {}); };
+  }, []);
+  if (!status?.open || !draft) {
+    const error = failure ?? status?.error;
+    return error ? <p className="error" role="alert">{errorMessage(locale, error)}</p> : null;
+  }
+  return <section ref={section} className="card settings" aria-labelledby="settings-title">
+    <div className="panel-header"><h2 id="settings-title">{t("settings.title")}</h2><button disabled={saving} onClick={() => {
+      void stopCapture().then(() => invoke("close_settings")).then(() => setStatus({ ...status, open: false })).catch(setFailure);
+    }}>{t("settings.close")}</button></div>
+    <label><input type="checkbox" checked={draft.enabled} disabled={saving || capturing} onChange={e => { setDraft({ ...draft, enabled: e.target.checked }); setSaved(false); }} />{t("settings.enabled")}</label>
+    <label htmlFor="shortcut-input">{t("settings.shortcut")}</label>
+    <input id="shortcut-input" ref={input} readOnly value={capturing ? t("settings.recording") : displayShortcut(draft.shortcut)} disabled={saving || !draft.enabled}
+      onClick={() => {
+        setFailure(null); setSaved(false);
+        const generation = ++captureEpoch.current;
+        void invoke("set_shortcut_capture", { capturing: true }).then(() => {
+          if (generation !== captureEpoch.current) return;
+          capture.current = true; setCapturing(true); input.current?.focus();
+        }).catch(setFailure);
+      }} onBlur={() => { if (capture.current) void stopCapture().catch(setFailure); }}
+      onKeyDown={event => {
+        if (!capturing) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault(); event.stopPropagation(); input.current?.click();
+          }
+          return;
+        }
+        event.preventDefault(); event.stopPropagation();
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (event.key === "Escape") { void stopCapture().catch(setFailure); return; }
+        const value = captureShortcut(event.nativeEvent);
+        if (value) { setDraft({ ...draft, shortcut: value }); setSaved(false); }
+      }} />
+    <p className="muted">{t("settings.hint")}</p>
+    <p role="status">{translate(locale, "settings.active", { shortcut: status.active.length ? status.active.map(displayShortcut).join(" / ") : t("settings.none") })}</p>
+    {status.uncertain.length > 0 && <p role="alert">{translate(locale, "settings.uncertain", { shortcut: status.uncertain.map(displayShortcut).join(" / ") })}</p>}
+    {status.error != null && <p role="alert" className="error">{errorMessage(locale, status.error)}</p>}
+    {failure != null && <p role="alert" className="error">{errorMessage(locale, failure)}</p>}
+    {saved && <p role="status">{t("settings.saved")}</p>}
+    <button disabled={saving || capturing || status.uncertain.length > 0} onClick={() => void save()}>{t("settings.save")}</button>
+  </section>;
+}

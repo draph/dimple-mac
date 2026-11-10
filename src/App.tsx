@@ -12,6 +12,8 @@ import { acceptSession, sameContext, sameDraft } from "./session";
 import type { PreparedOperation, PrepareOperation, RenderParams } from "./contracts";
 import { TextBadge } from "./TextBadge";
 import { Adjustments } from "./Adjustments";
+import { ShortcutSettings } from "./ShortcutSettings";
+import { shouldHideOnEscape } from "./shortcut";
 import { defaultParams } from "./renderParams";
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -155,14 +157,28 @@ export default function App() {
     } catch (error) { if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error }); }
     finally { if (generation === epoch.current) { submitGuard.current = false; setSubmitting(false); } }
   };
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (shouldHideOnEscape(event, !!dialog.current?.open, !!entry?.choosing, false) && !event.defaultPrevented) {
+        event.preventDefault();
+        void invoke("request_hide_panel").catch(error => setFailure({ error }));
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [entry?.choosing]);
   const name = (path: string) => path.substring(path.lastIndexOf("/") + 1) || path;
   return (
     <main className="panel">
       <header className="panel-header">
         <h1>{t("app.name")}</h1>
         <button className="quiet" disabled={!session} aria-pressed={entry?.pinned ?? false} onClick={() => command("set_pinned", { pinned: !entry?.pinned })}>{t("window.pin")}</button>
-        <button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button>
+        <details className="secondary-menu"><summary>{t("menu.more")}</summary>
+          <button className="quiet" onClick={() => command("open_settings")}>{t("settings.title")}</button>
+          <button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button>
+        </details>
       </header>
+      <ShortcutSettings locale={locale} />
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
         <h2 id="target-heading">{t("entry.heading")}</h2>
         {entry?.items.length ? <>
