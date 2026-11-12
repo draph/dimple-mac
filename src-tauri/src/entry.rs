@@ -102,6 +102,9 @@ fn commit_update<R: tauri::Runtime>(
     mut state: MutexGuard<'_, Snapshot>,
 ) {
     state.revision += 1;
+    if state.preparing || state.operation_locked() {
+        crate::settings::set_open(app, false);
+    }
     let cleanup = if state.cleanup.is_none() && all_succeeded(&state) {
         let token = (
             state.operation.as_ref().unwrap().operation_id.clone(),
@@ -489,6 +492,14 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
 }
 pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     crate::panel::show(app, None);
+}
+pub fn open_settings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let inbox = app.state::<Inbox>();
+    let s = inbox.0.lock().unwrap();
+    // Serialize opening with operation updates so a late request cannot cover progress.
+    crate::settings::set_open(app, !s.preparing && !s.operation_locked());
+    drop(s);
+    show(app);
 }
 pub fn wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     wake_from(app, crate::macos::finder_is_frontmost());
@@ -1664,6 +1675,81 @@ pub fn can_hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn settings_native_and_ipc_entries_recheck_operations_and_do_not_queue_opening() {
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox::default())
+            .manage(crate::settings::Settings::default())
+            .invoke_handler(tauri::generate_handler![crate::settings::open_settings])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let is_open = || {
+            serde_json::to_value(crate::settings::get_shortcut_settings(app.handle().clone()))
+                .unwrap()["open"]
+                == true
+        };
+        for ipc in [false, true] {
+            let open = || {
+                if ipc {
+                    tauri::test::get_ipc_response(
+                        &window,
+                        tauri::webview::InvokeRequest {
+                            cmd: "open_settings".into(),
+                            callback: tauri::ipc::CallbackFn(0),
+                            error: tauri::ipc::CallbackFn(1),
+                            url: "tauri://localhost".parse().unwrap(),
+                            body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+                            headers: Default::default(),
+                            invoke_key: tauri::test::INVOKE_KEY.into(),
+                        },
+                    )
+                    .unwrap();
+                } else {
+                    crate::settings::open(app.handle());
+                }
+            };
+            for case in 0..5 {
+                super::update(app.handle(), |s| *s = super::Snapshot::default());
+                open();
+                assert!(is_open());
+                super::update(app.handle(), |s| match case {
+                    0 => s.preparing = true,
+                    1 => {
+                        let request = crate::operation::parse(
+                            r#"{"revision":0,"targetIds":["x"],"action":{"type":"restore"}}"#,
+                        )
+                        .unwrap();
+                        s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
+                            request,
+                            vec![],
+                        )));
+                    }
+                    _ => {
+                        let mut progress = completed_operation();
+                        progress.phase = ["checking", "running", "uncertain"][case - 2].into();
+                        s.operation = Some(progress);
+                    }
+                });
+                assert!(
+                    !is_open(),
+                    "operation must dismiss settings that opened first"
+                );
+                open();
+                assert!(!is_open(), "late native and IPC requests must be refused");
+                super::update(app.handle(), |s| {
+                    s.preparing = false;
+                    s.prepared = None;
+                    s.operation = Some(completed_operation());
+                });
+                assert!(!is_open(), "completion must not reopen settings");
+                open();
+                assert!(is_open(), "completed results allow an explicit new request");
+            }
+        }
+    }
     fn targets() -> super::Snapshot {
         super::Snapshot {
             revision: 7,

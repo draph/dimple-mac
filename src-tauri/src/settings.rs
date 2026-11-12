@@ -257,13 +257,21 @@ pub fn protects_panel<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     app.try_state::<Settings>()
         .is_some_and(|s| s.0.lock().unwrap().capturing)
 }
-pub fn open(app: &tauri::AppHandle) {
-    app.state::<Settings>().0.lock().unwrap().open = true;
-    crate::entry::show(app);
-    let _ = app.emit("shortcut-settings", ());
+pub(crate) fn set_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, open: bool) {
+    if let Some(state) = app.try_state::<Settings>() {
+        let mut s = state.0.lock().unwrap();
+        if s.open != open {
+            s.open = open;
+            drop(s);
+            let _ = app.emit("shortcut-settings", ());
+        }
+    }
+}
+pub fn open<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    crate::entry::open_settings(app);
 }
 #[tauri::command]
-pub fn get_shortcut_settings(app: tauri::AppHandle) -> Status {
+pub fn get_shortcut_settings<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Status {
     app.state::<Settings>().0.lock().unwrap().clone()
 }
 #[tauri::command]
@@ -292,7 +300,7 @@ pub fn close_settings(app: tauri::AppHandle) {
     app.state::<Settings>().0.lock().unwrap().open = false;
 }
 #[tauri::command]
-pub fn open_settings(app: tauri::AppHandle) {
+pub fn open_settings<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
     open(&app);
 }
 #[tauri::command]

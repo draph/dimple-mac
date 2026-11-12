@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acceptSession, sameContext, sameDraft } from "./session.ts";
+import { acceptSession, sameContext, sameDraft, settingsBlocked } from "./session.ts";
 import type { Session } from "./i18n.ts";
 
 function session(revision = 1): Session {
@@ -10,6 +10,23 @@ function session(revision = 1): Session {
     operation: { canStop: false, canRetry: false, canContinue: false, revision, prepared: null, progress: null },
   };
 }
+
+test("settings leave preparation, confirmation and unresolved operations visible until completion", () => {
+  const value = session();
+  assert.ok(settingsBlocked(null));
+  assert.ok(!settingsBlocked(value));
+  assert.ok(settingsBlocked(value, true));
+  value.entry.preparing = true;
+  assert.ok(settingsBlocked(value));
+  value.entry.preparing = false;
+  value.operation.prepared = { operationId: "confirmation", confirmationToken: "token", targetIds: [], linkedTargetIds: [], overwriteTargetIds: [], restore: true, commitAvailable: true };
+  assert.ok(settingsBlocked(value));
+  value.operation.prepared = null;
+  for (const phase of ["checking", "running", "uncertain", "completed"] as const) {
+    value.operation.progress = { operationId: "write", sequence: 1, phase, slow: false, stopped: false, items: [] };
+    assert.equal(settingsBlocked(value), phase !== "completed");
+  }
+});
 
 test("atomic snapshots reject stale results and same-operation sequence regressions", () => {
   const current = session(2);

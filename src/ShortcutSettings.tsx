@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { errorMessage, translate, type Locale } from "./i18n";
 import { captureShortcut, displayShortcut, type ShortcutStatus, type ShortcutSettings as Value } from "./shortcut";
 
-export function ShortcutSettings({ locale }: { locale: Locale }) {
+export function ShortcutSettings({ locale, blocked, onOpenChange }: { locale: Locale; blocked: boolean; onOpenChange: (open: boolean) => void }) {
   const [status, setStatus] = useState<ShortcutStatus | null>(null);
   const [draft, setDraft] = useState<Value | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -15,17 +15,26 @@ export function ShortcutSettings({ locale }: { locale: Locale }) {
   const capture = useRef(false);
   const captureEpoch = useRef(0);
   const section = useRef<HTMLElement>(null);
+  const previouslyBlocked = useRef(false);
   const t = (key: string) => translate(locale, key);
   useEffect(() => {
     let active = true;
+    let request = 0;
+    const resetOpen = blocked || previouslyBlocked.current;
+    previouslyBlocked.current = blocked;
     const refresh = async () => {
+      const generation = ++request;
       const value = await invoke<ShortcutStatus>("get_shortcut_settings");
-      if (active) { setStatus(value); setDraft(previous => previous ?? value.settings); }
+      if (!active || generation !== request) return;
+      if (blocked && value.open) await invoke("close_settings");
+      if (active && generation === request) { setStatus({ ...value, open: value.open && !blocked }); setDraft(previous => previous ?? value.settings); }
     };
     const listener = listen("shortcut-settings", () => void refresh().catch(setFailure));
-    void listener.then(() => invoke("set_shortcut_capture", { capturing: false })).then(refresh).catch(setFailure);
+    void listener.then(() => active ? invoke("set_shortcut_capture", { capturing: false }) : undefined)
+      .then(() => active && resetOpen ? invoke("close_settings") : undefined)
+      .then(() => { if (active) return refresh(); }).catch(setFailure);
     return () => { active = false; void listener.then(fn => fn()).catch(() => {}); };
-  }, []);
+  }, [blocked]);
   const stopCapture = async () => {
     ++captureEpoch.current;
     capture.current = false; setCapturing(false);
@@ -41,25 +50,36 @@ export function ShortcutSettings({ locale }: { locale: Locale }) {
     try {
       await stopCapture();
       const value = await invoke<ShortcutStatus>("save_shortcut_settings", { settings: draft });
-      setStatus(value);
+      setStatus(previous => ({ ...value, open: previous?.open ?? false }));
       if (value.saved) { setDraft(value.settings); setSaved(true); }
     } catch (error) { setFailure(error); }
     finally { setSaving(false); }
   };
+  const open = !!status?.open && !blocked;
   useEffect(() => {
-    if (status?.open) { section.current?.scrollIntoView({ block: "start" }); input.current?.focus(); }
-  }, [status?.open]);
+    if (blocked) {
+      if (status?.open) void invoke("close_settings").catch(setFailure);
+      setStatus(previous => previous && ({ ...previous, open: false }));
+    }
+  }, [blocked]);
+  useEffect(() => { onOpenChange(open); }, [open, onOpenChange]);
+  useEffect(() => {
+    if (!open) void stopCapture().catch(setFailure);
+  }, [open]);
+  useEffect(() => {
+    if (open) { section.current?.scrollIntoView({ block: "start" }); section.current?.focus(); }
+  }, [open]);
   useEffect(() => {
     const listener = listen<string>("shortcut-captured", event => {
       if (capture.current) { setDraft(previous => previous && ({ ...previous, shortcut: event.payload })); setSaved(false); }
     });
     return () => { void listener.then(fn => fn()).catch(() => {}); };
   }, []);
-  if (!status?.open || !draft) {
+  if (!open || !status || !draft) {
     const error = failure ?? status?.error;
     return error ? <p className="error" role="alert">{errorMessage(locale, error)}</p> : null;
   }
-  return <section ref={section} className="card settings" aria-labelledby="settings-title">
+  return <section ref={section} tabIndex={-1} className="card settings" aria-labelledby="settings-title">
     <div className="panel-header"><h2 id="settings-title">{t("settings.title")}</h2><button disabled={saving} onClick={() => {
       void stopCapture().then(() => invoke("close_settings")).then(() => setStatus({ ...status, open: false })).catch(setFailure);
     }}>{t("settings.close")}</button></div>

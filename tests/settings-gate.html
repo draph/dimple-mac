@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Settings gate regression</title>
+<body><output id="result">Running…</output><div id="root"></div>
+<script type="module">
+// Run with npm run dev, then open /tests/settings-gate.html.
+import React, { act, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { mockIPC } from '@tauri-apps/api/mocks';
+import { emit } from '@tauri-apps/api/event';
+import { ShortcutSettings } from '../src/ShortcutSettings.tsx';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const status = { settings: { enabled: true, shortcut: 'alt+KeyF' }, active: ['alt+KeyF'], uncertain: [], saved: false, error: null, open: false, capturing: false };
+let setBlocked, visible = false, delay = false, release;
+mockIPC(async (cmd, args) => {
+  if (cmd === 'get_shortcut_settings') {
+    const value = structuredClone(status);
+    if (delay) { delay = false; await new Promise(done => release = done); }
+    return value;
+  }
+  if (cmd === 'close_settings') status.open = false;
+  if (cmd === 'set_shortcut_capture') status.capturing = !!args.capturing;
+}, { shouldMockEvents: true });
+function Harness() {
+  const [blocked, update] = useState(false);
+  setBlocked = update;
+  return React.createElement(ShortcutSettings, { locale: 'en', blocked, onOpenChange: open => { visible = open; } });
+}
+const root = createRoot(document.querySelector('#root'));
+const check = (condition, message) => { if (!condition) throw new Error(message); };
+const open = async (late = false) => {
+  status.open = true; delay = late;
+  await act(async () => { await emit('shortcut-settings'); });
+};
+try {
+  await act(async () => root.render(React.createElement(Harness)));
+  await open();
+  check(visible, 'Idle settings must open');
+  await act(async () => setBlocked(true));
+  check(!visible && !status.open, 'Starting an operation must close settings');
+  await open();
+  check(!visible && !status.open, 'A blocked native request must be discarded');
+  await open(true);
+  check(!visible, 'A delayed native request must not cover progress');
+  await act(async () => setBlocked(false));
+  check(!visible && !status.open, 'An aborted preparation must not queue settings');
+  await open();
+  check(visible && status.open, 'An explicit request after completion must open settings');
+  await act(async () => release());
+  check(visible && status.open, 'A stale blocked response must preserve a later explicit request');
+  await act(async () => document.querySelector('button').click());
+  check(!visible && !status.open, 'Back must close settings');
+  await act(async () => setBlocked(true));
+  await open(true);
+  await act(async () => setBlocked(false));
+  await act(async () => release());
+  check(!visible && !status.open, 'A late response must not reopen settings without a new request');
+  document.querySelector('#result').textContent = 'PASS: 9 settings gate assertions';
+} catch (error) {
+  document.querySelector('#result').textContent = `FAIL: ${error.message}`;
+  throw error;
+} finally {
+  await act(async () => root.unmount());
+}
+</script></body></html>

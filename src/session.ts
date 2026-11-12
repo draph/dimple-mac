@@ -1,5 +1,10 @@
 import type { Session } from "./i18n.ts";
 
+export function settingsBlocked(session: Session | null, submitting = false): boolean {
+  return submitting || !session || session.entry.preparing || !!session.operation.prepared
+    || (!!session.operation.progress && session.operation.progress.phase !== "completed");
+}
+
 export function acceptSession(previous: Session | null, next: Session): Session {
   if (!previous) return next;
   if (next.entry.revision < previous.entry.revision) return previous;

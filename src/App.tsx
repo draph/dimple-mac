@@ -8,7 +8,7 @@ import { icons, categories, searchIcons } from "./icons";
 
 const thumbnails = import.meta.glob<string>("./assets/*.svg", { query: "?url", import: "default", eager: true });
 
-import { acceptSession, sameContext, sameDraft } from "./session";
+import { acceptSession, sameContext, sameDraft, settingsBlocked } from "./session";
 import type { PreparedOperation, PrepareOperation, RenderParams } from "./contracts";
 import { TextBadge } from "./TextBadge";
 import { Adjustments } from "./Adjustments";
@@ -28,6 +28,9 @@ export default function App() {
   }, []);
   const [readyBadgeId, setReadyBadgeId] = useState<string | null>(null);
   const [imported, setImported] = useState<{ id: string; url: string } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButton = useRef<HTMLButtonElement>(null);
+  const [badgeTab, setBadgeTab] = useState("icon");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const onPreviewReady = useCallback((id: string, ready: boolean) => setReadyBadgeId(ready ? id : null), []);
@@ -92,6 +95,13 @@ export default function App() {
     if (!prepared?.confirmationToken && dialog.current?.open) dialog.current.close();
   }, [prepared]);
   const busy = submitting || !!prepared || running || !entry || !session || entry.choosing || entry.reading || entry.checking || entry.preparing;
+  const blockSettings = settingsBlocked(session, submitting);
+  const showSettings = settingsOpen && !blockSettings;
+  const wasSettingsOpen = useRef(false);
+  useEffect(() => {
+    if (wasSettingsOpen.current && !showSettings) settingsButton.current?.focus();
+    wasSettingsOpen.current = showSettings;
+  }, [showSettings]);
   const command = (name: string, args?: Record<string, unknown>) => {
     const generation = epoch.current;
     const before = current.current;
@@ -173,12 +183,13 @@ export default function App() {
       <header className="panel-header">
         <h1>{t("app.name")}</h1>
         <button className="quiet" disabled={!session} aria-pressed={entry?.pinned ?? false} onClick={() => command("set_pinned", { pinned: !entry?.pinned })}>{t("window.pin")}</button>
-        <details className="secondary-menu"><summary>{t("menu.more")}</summary>
-          <button className="quiet" onClick={() => command("open_settings")}>{t("settings.title")}</button>
-          <button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button>
-        </details>
+        <button ref={settingsButton} className="quiet settings-button" disabled={blockSettings} aria-label={t("settings.title")} onClick={() => command("open_settings")}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></svg>
+        </button>
       </header>
-      <ShortcutSettings locale={locale} />
+      <ShortcutSettings locale={locale} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} />
+      <div className="editor" hidden={showSettings}>
+      <div className="target-actions"><button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button></div>
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
         <h2 id="target-heading">{t("entry.heading")}</h2>
         {entry?.items.length ? <>
@@ -205,6 +216,16 @@ export default function App() {
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <h2 id="badge-heading">{t("badge.heading")}</h2>
+        <div className="badge-tabs" role="tablist" aria-label={t("badge.heading")}>
+          {["icon", "text"].map(tab => <button key={tab} id={`badge-tab-${tab}`} role="tab" aria-selected={badgeTab === tab} aria-controls={`badge-panel-${tab}`} tabIndex={badgeTab === tab ? 0 : -1}
+            onClick={() => setBadgeTab(tab)} onKeyDown={event => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "icon" : event.key === "End" ? "text" : badgeTab === "icon" ? "text" : "icon";
+              setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
+            }}>{t(`badge.tab.${tab}`)}</button>)}
+        </div>
+        <div id="badge-panel-icon" role="tabpanel" aria-labelledby="badge-tab-icon" hidden={badgeTab !== "icon"}>
         <div className="icon-filters">
           <input type="search" aria-label={t("icons.search")} placeholder={t("icons.search")} value={query} onChange={event => setQuery(event.target.value)} />
           <select aria-label={t("icons.category")} value={category} onChange={event => setCategory(event.target.value)}>
@@ -222,7 +243,10 @@ export default function App() {
         <div className="target-actions">
           <button disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
         </div>
+        </div>
+        <div id="badge-panel-text" role="tabpanel" aria-labelledby="badge-tab-text" hidden={badgeTab !== "text"}>
         {session && <TextBadge session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
+        </div>
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         {!icons.some(icon => icon.id === badgeId) && entry?.badge.text == null && <p className="muted">{t("badge.imported")}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
@@ -264,6 +288,7 @@ export default function App() {
         <button className="primary" disabled={busy || !entry?.items.length || !previewReady || !!progress} onClick={() => void start(false)}>{t("apply.action")}</button>
         </>}
       </footer>
+      </div>
       <dialog ref={dialog} aria-labelledby="confirm-title" aria-describedby="confirm-warning" onCancel={event => { event.preventDefault(); void confirm(true); }}>
         <h2 id="confirm-title">{t(prepared?.restore ? "operation.confirmRestore" : "operation.confirmApply")}</h2>
         <p id="confirm-warning">{t(prepared?.restore ? "operation.restoreWarning" : "operation.overwriteWarning")}</p>
