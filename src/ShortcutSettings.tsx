@@ -3,8 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { errorMessage, translate, type Locale } from "./i18n";
 import { captureShortcut, displayShortcut, type ShortcutStatus, type ShortcutSettings as Value } from "./shortcut";
+import { AppearanceSettings } from "./AppearanceSettings";
+import type { AppearanceController } from "./appearance";
 
-export function ShortcutSettings({ locale, version, blocked, onOpenChange }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void }) {
+export function ShortcutSettings({ locale, version, blocked, onOpenChange, appearance }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void; appearance: AppearanceController }) {
   const [status, setStatus] = useState<ShortcutStatus | null>(null);
   const [draft, setDraft] = useState<Value | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -79,11 +81,19 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange }: { l
     const error = failure ?? status?.error;
     return error ? <p className="error" role="alert">{errorMessage(locale, error)}</p> : null;
   }
-  return <section ref={section} tabIndex={-1} className="card settings" aria-labelledby="settings-title">
-    <div className="panel-header"><h2 id="settings-title">{t("settings.title")}</h2><button disabled={saving} onClick={() => {
+  return <section ref={section} tabIndex={-1} className="settings" aria-labelledby="settings-title">
+    <div className="settings-header"><h2 id="settings-title">{t("settings.title")}</h2><button className="quiet settings-back" disabled={saving} onClick={() => {
       void stopCapture().then(() => invoke("close_settings")).then(() => setStatus({ ...status, open: false })).catch(setFailure);
-    }}>{t("settings.close")}</button></div>
-    <label><input type="checkbox" checked={draft.enabled} disabled={saving || capturing} onChange={e => { setDraft({ ...draft, enabled: e.target.checked }); setSaved(false); }} />{t("settings.enabled")}</label>
+    }}><span aria-hidden="true">‹ </span>{t("settings.close")}</button></div>
+    <div className="settings-scroll">
+    <AppearanceSettings locale={locale} appearance={appearance} />
+    <section className="settings-card" aria-labelledby="shortcut-title">
+    <div className="settings-card-heading">
+      <span className="settings-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="3" /><path d="M6 8h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M8 16h8" /></svg></span>
+      <h2 id="shortcut-title" className="settings-card-title">{t("settings.section")}</h2>
+    </div>
+    <div className="settings-toggle"><span><span className="settings-label">{t("settings.enabled")}</span><span className="muted">{t("settings.enabledDescription")}</span></span><input role="switch" aria-label={t("settings.enabled")} type="checkbox" checked={draft.enabled} disabled={saving || capturing} onChange={e => { setDraft({ ...draft, enabled: e.target.checked }); setSaved(false); }} /></div>
+    <div className="shortcut-row">
     <label htmlFor="shortcut-input">{t("settings.shortcut")}</label>
     <input id="shortcut-input" ref={input} readOnly value={capturing ? t("settings.recording") : displayShortcut(draft.shortcut)} disabled={saving || !draft.enabled}
       onClick={() => {
@@ -107,19 +117,22 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange }: { l
         const value = captureShortcut(event.nativeEvent);
         if (value) { setDraft({ ...draft, shortcut: value }); setSaved(false); }
       }} />
-    <p className="muted">{t("settings.hint")}</p>
-    <p role="status">{translate(locale, "settings.active", { shortcut: status.active.length ? status.active.map(displayShortcut).join(" / ") : t("settings.none") })}</p>
+    <button className="primary" disabled={saving || capturing || status.uncertain.length > 0} onClick={() => void save()}>{t("settings.save")}</button>
+    </div>
+    <p className="muted settings-active" role="status">{translate(locale, "settings.active", { shortcut: status.active.length ? status.active.map(displayShortcut).join(" / ") : t("settings.none") })}</p>
+    <p className="muted settings-hint"><span aria-hidden="true">ⓘ</span>{t("settings.hint")}</p>
     {status.uncertain.length > 0 && <p role="alert">{translate(locale, "settings.uncertain", { shortcut: status.uncertain.map(displayShortcut).join(" / ") })}</p>}
     {status.error != null && <p role="alert" className="error">{errorMessage(locale, status.error)}</p>}
     {failure != null && <p role="alert" className="error">{errorMessage(locale, failure)}</p>}
     {saved && <p role="status">{t("settings.saved")}</p>}
-    <button disabled={saving || capturing || status.uncertain.length > 0} onClick={() => void save()}>{t("settings.save")}</button>
-    <section className="about" aria-labelledby="about-title">
-      <h2 id="about-title">{t("about.title")}</h2>
-      <p>{t("about.name")}</p>
-      <p>{translate(locale, "about.version", { version })}</p>
-      <button disabled aria-describedby="update-unavailable">{t("about.update")}</button>
-      <p id="update-unavailable" className="muted">{t("about.unavailable")}</p>
     </section>
+    <section className="settings-card about" aria-labelledby="about-title">
+      <span className="settings-icon about-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v.1" /></svg></span>
+      <div><p id="about-title" className="settings-card-title">{translate(locale, "about.version", { version })}</p></div>
+      <button type="button" className="check-updates" disabled aria-describedby="update-unavailable">{t("about.update")}</button>
+      <span id="update-unavailable" className="sr-only">{t("about.unavailable")}</span>
+    </section>
+    </div>
+    <div className="settings-footer"><button className="quiet" disabled={saving || capturing} onClick={() => { void invoke("quit_app").catch(setFailure); }}>{t("menu.quit")}</button></div>
   </section>;
 }

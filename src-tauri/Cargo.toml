@@ -1,6 +1,6 @@
 [package]
 name = "folderify-desktop"
-version = "0.1.0"
+version = "1.0.0"
 description = "A macOS menu bar app for customizing folder icons"
 license = "MIT"
 edition = "2024"

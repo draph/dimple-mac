@@ -60,15 +60,15 @@ export function Adjustments({ session, disabled, refresh, onChange }: {
     if (!sending.current) { value.current = session.entry.params; setParams(session.entry.params); if (!invalidRef.current) setColor(session.entry.params.theme === "native" ? "#808080" : session.entry.params.theme); }
   }, [session.entry.params]);
   const t = (key: string) => translate(session.locale, key);
-  return <details className="adjustments card"><summary>{t("adjust.heading")}</summary>
+  return <details className="adjustments"><summary>{t("adjust.heading")}</summary>
     <fieldset disabled={disabled}>
       {([["scale", .25, 2, .01], ["offsetX", -100, 100, 1], ["offsetY", -100, 100, 1]] as const).map(([name, min, max, step]) =>
-        <label key={name}>{t(`adjust.${name}`)} <output>{params[name]}</output>
+        <label className="adjustment-row" key={name}><span>{t(`adjust.${name}`)}</span>
           <input type="range" aria-label={t(`adjust.${name}`)} min={min} max={max} step={step} value={params[name]}
-            onChange={event => enqueue({ ...value.current, [name]: Number(event.target.value) })} />
+            onChange={event => enqueue({ ...value.current, [name]: Number(event.target.value) })} /><output>{params[name]}</output>
         </label>)}
       <div className="theme-presets" role="group" aria-label={t("adjust.theme")}>
-        {themes.map(([name, theme]) => <button key={name} aria-pressed={params.theme === theme} onClick={() => enqueue({ ...value.current, theme })}>{t(`adjust.${name}`)}</button>)}
+        {themes.map(([name, theme]) => <button key={name} className="theme-swatch" aria-label={t(`adjust.${name}`)} title={t(`adjust.${name}`)} style={{ backgroundColor: theme === "native" ? "#65BDF3" : theme }} aria-pressed={params.theme === theme} onClick={() => enqueue({ ...value.current, theme })}><span className="sr-only">{t(`adjust.${name}`)}</span></button>)}
       </div>
       <label>{t("adjust.custom")} <input type="color" aria-label={t("adjust.picker")} value={/^#[\da-f]{6}$/i.test(color) ? color : "#808080"}
         onChange={event => enqueue({ ...value.current, theme: event.target.value.toUpperCase() })} />

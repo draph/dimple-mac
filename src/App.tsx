@@ -15,7 +15,8 @@ import { Adjustments } from "./Adjustments";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { shouldHideOnEscape } from "./shortcut";
 import { defaultParams } from "./renderParams";
-export default function App() {
+import type { AppearanceController } from "./appearance";
+export default function App({ appearance }: { appearance: AppearanceController }) {
   const [session, setSession] = useState<Session | null>(null);
   const current = useRef<Session | null>(null);
   const epoch = useRef(0);
@@ -180,22 +181,35 @@ export default function App() {
   const name = (path: string) => path.substring(path.lastIndexOf("/") + 1) || path;
   return (
     <main className="panel">
-      <header className="panel-header">
+      <header className="panel-header" hidden={showSettings}>
         <h1>{t("app.name")}</h1>
         <button className="quiet" disabled={!session} aria-pressed={entry?.pinned ?? false} onClick={() => command("set_pinned", { pinned: !entry?.pinned })}>{t("window.pin")}</button>
         <button ref={settingsButton} className="quiet settings-button" disabled={blockSettings} aria-label={t("settings.title")} onClick={() => command("open_settings")}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></svg>
         </button>
       </header>
-      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} />
+      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} appearance={appearance} />
       <div className="editor" hidden={showSettings}>
-      <div className="target-actions"><button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button></div>
+      <div className="editor-scroll">
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
+        <div className="target-overview">
+        <div className="target-preview"><Preview locale={locale} source={badgeSource} badgeId={badgeId} params={renderParams} onReady={onPreviewReady} /><span className="sr-only">{t("preview.heading")}</span></div>
+        <div className="target-info">
         <h2 id="target-heading">{t("entry.heading")}</h2>
         {entry?.items.length ? <>
           <p className="target-summary" title={entry.items.length === 1 ? entry.items[0].path : undefined}>
             {entry.items.length === 1 ? name(entry.items[0].path) : translate(locale, "entry.count", { count: entry.items.length })}
           </p>
+          {entry.items.length === 1 ? <p className="target-path" title={entry.items[0].path}>{entry.items[0].path}</p> : <p className="muted">{t("preview.batch")}</p>}
+
+        </> : <p className="empty">{t("entry.empty")}</p>}
+        <div className="target-actions">
+          <button disabled={busy || paramsPending} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
+          <button className="quiet" disabled={busy || paramsPending} onClick={() => command("finder_selection")}>{t("entry.finderShort")}</button>
+        </div>
+        </div>
+        </div>
+        {!!entry?.items.length && <>
           <details>
             <summary>{t("entry.details")}</summary>
             <ul className="target-list">{entry.items.map((item) => <li key={item.id}>
@@ -204,18 +218,15 @@ export default function App() {
                 onClick={() => command("remove_target", { expectedRevision: entry.revision, targetId: item.id })}>{t("entry.remove")}</button>
             </li>)}</ul>
           </details>
-        </> : <p className="empty">{t("entry.empty")}</p>}
-        <div className="target-actions">
-          <button disabled={busy || paramsPending} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
-          <button className="quiet" disabled={busy || paramsPending} onClick={() => command("finder_selection")}>{t("entry.finder")}</button>
-        </div>
+        </>}
         {entry?.reading && <p role="status" className="muted">{t("entry.reading")}</p>}
         {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
         {entry?.error && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
         {!!entry?.issues.length && <ul aria-label={t("entry.invalidItems")}>{entry.issues.map((issue, index) => <li key={`${index}:${issue.path}`}><span className="path">{issue.path}</span><p role="alert">{errorMessage(locale, issue.error)}</p></li>)}</ul>}
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
-        <h2 id="badge-heading">{t("badge.heading")}</h2>
+        <div className="badge-toolbar">
+        <h2 id="badge-heading" className="sr-only">{t("badge.heading")}</h2>
         <div className="badge-tabs" role="tablist" aria-label={t("badge.heading")}>
           {["icon", "text"].map(tab => <button key={tab} id={`badge-tab-${tab}`} role="tab" aria-selected={badgeTab === tab} aria-controls={`badge-panel-${tab}`} tabIndex={badgeTab === tab ? 0 : -1}
             onClick={() => setBadgeTab(tab)} onKeyDown={event => {
@@ -224,6 +235,8 @@ export default function App() {
               const next = event.key === "Home" ? "icon" : event.key === "End" ? "text" : badgeTab === "icon" ? "text" : "icon";
               setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
             }}>{t(`badge.tab.${tab}`)}</button>)}
+        </div>
+        <button className="quiet import-button" hidden={badgeTab !== "icon"} disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
         </div>
         <div id="badge-panel-icon" role="tabpanel" aria-labelledby="badge-tab-icon" hidden={badgeTab !== "icon"}>
         <div className="icon-filters">
@@ -240,9 +253,6 @@ export default function App() {
           </button>)}
         </div>
         {matchingIcons.length === 0 && <p role="status" className="empty">{t("icons.empty")}</p>}
-        <div className="target-actions">
-          <button disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
-        </div>
         </div>
         <div id="badge-panel-text" role="tabpanel" aria-labelledby="badge-tab-text" hidden={badgeTab !== "text"}>
         {session && <TextBadge session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
@@ -253,11 +263,11 @@ export default function App() {
         {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
       </section>
-      <section aria-labelledby="preview-heading">
-        <h2 id="preview-heading">{t("preview.heading")}</h2>
-        <Preview locale={locale} source={badgeSource} badgeId={badgeId} params={renderParams} onReady={onPreviewReady} />
+      <section>
         {session && <Adjustments session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} />}
       </section>
+      </div>
+      {(failure || progress || (prepared && !prepared.confirmationToken)) && <div className="operation-feedback">
       {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
       {progress && <section className="card" aria-live="polite" aria-atomic="true">
         <p>{translate(locale, progress.phase === "completed" ? "operation.result" : "operation.progress", {
@@ -279,7 +289,8 @@ export default function App() {
         </li>)}</ul></details>
       </section>}
       {prepared && !prepared.confirmationToken && <button disabled={submitting} onClick={() => void confirm(true)}>{t("operation.cancel")}</button>}
-      <footer>
+      </div>}
+      <footer className="action-bar">
         {operation?.canStop && <button disabled={submitting} onClick={() => command("stop_operation", { operationId: progress!.operationId })}>{t("operation.stop")}</button>}
         {operation?.canRetry && <button disabled={busy || textQueued || paramsPending} onClick={() => void recover("retry_failed")}>{t("operation.retry")}</button>}
         {operation?.canContinue && <button disabled={busy || textQueued || paramsPending} onClick={() => void recover("continue_pending")}>{t("operation.continue")}</button>}
