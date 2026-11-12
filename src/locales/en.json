@@ -229,5 +229,11 @@
   "appearance.system": "System",
   "appearance.dark": "Dark",
   "appearance.light": "Light",
-  "appearance.saveFailed": "Could not save appearance. The default may be restored next time you open the app."
+  "appearance.saveFailed": "Could not save appearance. The default may be restored next time you open the app.",
+  "language.title": "Language",
+  "language.system": "Follow System",
+  "language.error.invalid": "The selected language is not supported.",
+  "language.error.damaged": "The language preference could not be read. Follow System is in use; the original file is preserved until you choose a language.",
+  "language.error.save": "Could not save the language preference. Your previous choice is still in use.",
+  "language.error.apply": "Could not apply the language to the app menus. Try again or restart the app."
 }

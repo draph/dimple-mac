@@ -96,3 +96,26 @@ pub fn recording(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<t
         )?],
     )
 }
+
+pub fn tray(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri::Wry>> {
+    let messages = locale.messages();
+    let show = MenuItem::with_id(app, "show", &messages["entry.show"], true, None::<&str>)?;
+    let settings = MenuItem::with_id(
+        app,
+        "settings",
+        &messages["settings.title"],
+        true,
+        None::<&str>,
+    )?;
+    let about = Item::about(app, Some(&messages["menu.about"]), None)?;
+    let quit = Item::quit(app, Some(&messages["menu.quit"]))?;
+    Menu::with_items(app, &[&show, &settings, &about, &quit])
+}
+
+pub fn apply(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<()> {
+    app.set_menu(build(app, locale)?)?;
+    if let Some(icon) = app.tray_by_id("main-tray") {
+        icon.set_menu(Some(tray(app, locale)?))?;
+    }
+    Ok(())
+}

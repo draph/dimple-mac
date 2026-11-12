@@ -13,7 +13,7 @@
   --primary-text: white;
 }
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; }
+html, body, #root { height: 100%; overflow: hidden; }
 body { margin: 0; }
 button, summary { cursor: pointer; }
 button { border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font: inherit; font-size: 12px; background: var(--surface); color: inherit; }
@@ -84,7 +84,6 @@ dialog p { margin-bottom: 8px; }
 .badge-tabs [aria-selected="true"] { border-color: var(--accent); }
 
 /* Keep the primary action visible while expanded details scroll. */
-#root { overflow: hidden; }
 .panel { height: 100%; max-width: 600px; padding: 14px 16px 0; gap: 12px; font-size: 13px; }
 .panel > .panel-header { flex: none; flex-wrap: nowrap; min-height: 30px; }
 .editor { flex: 1; min-height: 0; gap: 0; }
@@ -157,6 +156,7 @@ dialog p { margin-bottom: 8px; }
 .settings-back, .settings-footer button { color: var(--muted); font-size: 11px; }
 :root[data-theme="dark"] .badge-tabs [aria-selected="true"] { color: #181818; }
 .appearance { margin-bottom: 18px; }
+.language { margin-bottom: 18px; }
 .appearance-options { display: flex; gap: 2px; margin-top: 14px; padding: 3px; border: 1px solid var(--border); border-radius: 9px; }
 .appearance-options label { flex: 1; min-width: 0; position: relative; cursor: pointer; text-align: center; }
 .appearance-options input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; inset: 0; cursor: pointer; }

@@ -2250,10 +2250,9 @@ mod tests {
             super::check_paths(vec![temp.0.clone()]).unwrap(),
         );
         let app = tauri::test::mock_builder()
-            .manage(crate::Session {
-                version: env!("CARGO_PKG_VERSION"),
-                locale: crate::localization::Locale::En,
-            })
+            .manage(crate::language::Language::for_test(
+                crate::localization::Locale::En,
+            ))
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .invoke_handler(tauri::generate_handler![
                 crate::get_session,
@@ -3428,10 +3427,9 @@ mod tests {
         let id = state.badge.id.clone();
         let app = tauri::test::mock_builder()
             .manage(super::Inbox(std::sync::Mutex::new(state)))
-            .manage(crate::Session {
-                version: "test",
-                locale: crate::localization::Locale::En,
-            })
+            .manage(crate::language::Language::for_test(
+                crate::localization::Locale::En,
+            ))
             .invoke_handler(tauri::generate_handler![
                 crate::get_session,
                 super::get_badge_mask,

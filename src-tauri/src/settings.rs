@@ -1,10 +1,5 @@
 use crate::localization::AppError;
-use std::{
-    fs,
-    io::{Read, Write},
-    path::Path,
-    sync::Mutex,
-};
+use std::{path::Path, sync::Mutex};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
 
@@ -91,12 +86,7 @@ fn normalize(value: &str) -> Result<String, AppError> {
     Ok(key.into_string())
 }
 fn load(path: &Path) -> (ShortcutSettings, Option<AppError>) {
-    let bytes = fs::File::open(path).and_then(|file| {
-        let mut bytes = Vec::new();
-        file.take(1025).read_to_end(&mut bytes)?;
-        Ok(bytes)
-    });
-    match bytes {
+    match crate::config::read_limited(path, 1024) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (ShortcutSettings::default(), None),
         result => {
             let parsed = result
@@ -115,26 +105,8 @@ fn load(path: &Path) -> (ShortcutSettings, Option<AppError>) {
     }
 }
 fn persist(path: &Path, value: &ShortcutSettings) -> Result<(), AppError> {
-    let parent = path.parent().ok_or_else(|| error("save"))?;
-    fs::create_dir_all(parent).map_err(|_| error("save"))?;
-    let temp = parent.join(format!(".shortcut-{}.tmp", std::process::id()));
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&temp)
-        .map_err(|_| error("save"))?;
-    let result = (|| {
-        file.write_all(&serde_json::to_vec(value)?)?;
-        file.sync_all()?;
-        fs::rename(&temp, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-
-    result.map_err(|_| error("save"))
+    let bytes = serde_json::to_vec(value).map_err(|_| error("save"))?;
+    crate::config::write_atomic(path, "shortcut", &bytes).map_err(|_| error("save"))
 }
 
 trait Backend {
@@ -279,7 +251,7 @@ pub async fn set_shortcut_capture(app: tauri::AppHandle, capturing: bool) -> Res
     let (tx, mut rx) = tauri::async_runtime::channel(1);
     let on_main = app.clone();
     app.run_on_main_thread(move || {
-        let locale = on_main.state::<crate::Session>().locale;
+        let locale = on_main.state::<crate::language::Language>().locale();
         let result = (|| {
             let menu = if capturing {
                 crate::native_menu::recording(&on_main, locale)
@@ -325,6 +297,7 @@ pub async fn save_shortcut_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     #[derive(Default)]
     struct Fake {
         active: Vec<String>,

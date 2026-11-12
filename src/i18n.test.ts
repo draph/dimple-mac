@@ -84,3 +84,12 @@ test("shortcut failures have bounded bilingual messages", () => {
     assert.equal(errorMessage(locale, { code: "shortcut_error", params: { reason: "/private/path" } }), translate(locale, "error.generic"));
   }
 });
+
+test("language failures have bounded bilingual messages", () => {
+  for (const locale of ["en", "zh-Hans"] as const) {
+    for (const reason of ["invalid", "damaged", "save", "apply"]) {
+      assert.equal(errorMessage(locale, { code: "language_error", params: { reason } }), translate(locale, `language.error.${reason}`));
+    }
+    assert.equal(errorMessage(locale, { code: "language_error", params: { reason: "/private/path" } }), translate(locale, "error.generic"));
+  }
+});

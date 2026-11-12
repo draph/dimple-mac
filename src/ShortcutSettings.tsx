@@ -4,9 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import { errorMessage, translate, type Locale } from "./i18n";
 import { captureShortcut, displayShortcut, type ShortcutStatus, type ShortcutSettings as Value } from "./shortcut";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { LanguageSettings } from "./LanguageSettings";
 import type { AppearanceController } from "./appearance";
+import type { LanguagePreference, LanguageStatus } from "./language";
 
-export function ShortcutSettings({ locale, version, blocked, onOpenChange, appearance }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void; appearance: AppearanceController }) {
+export function ShortcutSettings({ locale, version, blocked, onOpenChange, appearance, language, onSelectLanguage }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void; appearance: AppearanceController; language: LanguageStatus | null; onSelectLanguage: (preference: LanguagePreference) => Promise<void> }) {
   const [status, setStatus] = useState<ShortcutStatus | null>(null);
   const [draft, setDraft] = useState<Value | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -87,6 +89,7 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, appea
     }}><span aria-hidden="true">‹ </span>{t("settings.close")}</button></div>
     <div className="settings-scroll">
     <AppearanceSettings locale={locale} appearance={appearance} />
+    <LanguageSettings locale={locale} status={language} disabled={blocked || capturing} onSelect={onSelectLanguage} />
     <section className="settings-card" aria-labelledby="shortcut-title">
     <div className="settings-card-heading">
       <span className="settings-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="3" /><path d="M6 8h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M8 16h8" /></svg></span>

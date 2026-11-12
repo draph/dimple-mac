@@ -229,5 +229,11 @@
   "appearance.system": "跟随系统",
   "appearance.dark": "深色",
   "appearance.light": "浅色",
-  "appearance.saveFailed": "无法保存外观，下次启动可能恢复默认。"
+  "appearance.saveFailed": "无法保存外观，下次启动可能恢复默认。",
+  "language.title": "语言",
+  "language.system": "跟随系统",
+  "language.error.invalid": "所选语言不受支持。",
+  "language.error.damaged": "无法读取语言设置，已使用跟随系统；在你选择语言前会保留原文件。",
+  "language.error.save": "无法保存语言设置，仍使用之前的选择。",
+  "language.error.apply": "无法将语言应用到应用菜单，请重试或重新启动应用。"
 }

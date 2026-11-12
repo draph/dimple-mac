@@ -16,10 +16,19 @@ import { ShortcutSettings } from "./ShortcutSettings";
 import { shouldHideOnEscape } from "./shortcut";
 import { defaultParams } from "./renderParams";
 import type { AppearanceController } from "./appearance";
+import { acceptLanguage, type LanguagePreference, type LanguageStatus } from "./language";
 export default function App({ appearance }: { appearance: AppearanceController }) {
   const [session, setSession] = useState<Session | null>(null);
   const current = useRef<Session | null>(null);
   const epoch = useRef(0);
+  const [language, setLanguage] = useState<LanguageStatus | null>(null);
+  const languageRef = useRef<LanguageStatus | null>(null);
+  const applyLanguage = useCallback((value: LanguageStatus) => {
+    const accepted = acceptLanguage(languageRef.current, value);
+    if (accepted === languageRef.current) return;
+    languageRef.current = accepted;
+    setLanguage(accepted);
+  }, []);
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
   const [localParams, setLocalParams] = useState<RenderParams | null>(null);
   const [paramsPending, setParamsPending] = useState(false);
@@ -47,11 +56,11 @@ export default function App({ appearance }: { appearance: AppearanceController }
     const next = acceptSession(current.current, value);
     if (!sameContext(current.current, next)) setFailure(null);
     current.current = next;
-    document.documentElement.lang = current.current.locale;
     setSession(current.current);
     return current.current;
   }, []);
-  const locale = session?.locale ?? "en";
+  const locale = language?.locale ?? session?.locale ?? "en";
+  useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const matchingIcons = searchIcons(query, category);
   const entry = session?.entry;
   const badgeId = entry?.badge.id ?? "code";
@@ -88,6 +97,24 @@ export default function App({ appearance }: { appearance: AppearanceController }
     });
     return () => { ++epoch.current; void listener.then(unlisten => unlisten()).catch(() => {}); };
   }, [refreshSession]);
+  useEffect(() => {
+    let active = true;
+    const listener = listen<LanguageStatus>("language-changed", event => {
+      if (active) applyLanguage(event.payload);
+    });
+    void listener.then(unlisten => {
+      if (!active) { unlisten(); return; }
+      return invoke<LanguageStatus>("get_language").then(value => {
+        if (active) applyLanguage(value);
+      });
+    }).catch((error: unknown) => {
+      if (active) setFailure({ error });
+    });
+    return () => { active = false; void listener.then(unlisten => unlisten()).catch(() => {}); };
+  }, [applyLanguage]);
+  const selectLanguage = useCallback(async (preference: LanguagePreference) => {
+    applyLanguage(await invoke<LanguageStatus>("set_language", { preference }));
+  }, [applyLanguage]);
   const prepared = operation?.prepared;
   const progress = operation?.progress;
   const running = !!progress && progress.phase !== "completed";
@@ -188,7 +215,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></svg>
         </button>
       </header>
-      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} appearance={appearance} />
+      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} appearance={appearance} language={language} onSelectLanguage={selectLanguage} />
       <div className="editor" hidden={showSettings}>
       <div className="editor-scroll">
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>

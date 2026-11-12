@@ -52,7 +52,9 @@ The compact About section in Settings shows Dimple, the installed package versio
 
 In **Settings → Appearance**, choose **System**, **Dark**, or **Light**. System is the default and follows macOS changes while the app is open. Changes apply immediately and are saved automatically in the app’s local WebView storage; no shortcut save is needed. Dark mode uses neutral black and gray surfaces with blue accents; appearance does not change folder previews or applied icons. To reset this preference, select **System**.
 
-Only `enabled` and `shortcut` are saved in `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json`. A missing file uses defaults; an unreadable or damaged file uses defaults with a warning and is preserved until you explicitly save. A startup registration conflict preserves the saved preference. The panel opens near the menu bar icon or on the pointer's screen, fits the available area, and scrolls internally. The opaque app background uses the selected appearance; native system dialogs follow macOS. Multi-display behavior has been manually verified.
+In **Settings → Language**, choose **Follow System**, **简体中文**, or **English**. Follow System is the default and resolves the preferred supported language macOS gives the app when it starts or when you select it again. A manual choice applies immediately to the panel, settings, and native menus, and is saved until you select Follow System. There is no live listener for macOS language changes; restart or select Follow System again to re-resolve it. Language affects presentation, not folder names, paths, or user-entered badge text.
+
+The keyboard shortcut is saved in `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json`, and the language preference is saved separately in `language.json`. A missing file uses defaults; an unreadable or damaged file uses defaults with a warning and is preserved until you explicitly save. A startup registration conflict preserves the saved shortcut preference. The panel opens near the menu bar icon or on the pointer's screen, fits the available area, and scrolls internally. The opaque app background uses the selected appearance; native system dialogs follow macOS. Multi-display behavior has been manually verified.
 
 ### Badges and adjustments
 
@@ -80,12 +82,12 @@ If a system write takes longer than expected, wait for its result; a timeout doe
 - The folder style is fixed to Big Sur light/native blue as its base, regardless of the running system or interface appearance. Changes to folder color are separate from the app's light/dark interface.
 - The writing design uses macOS file coordination and identity checks. Programs that bypass coordination can still replace a path after the final check; this is not a mandatory lock against every process.
 - Previewing and adjusting do not write to targets. Applying or restoring changes folder icon metadata, not folder contents.
-- Target paths, imported artwork, and editing drafts are not saved across app launches. Shortcut and appearance preferences are saved. Logs must not include full private paths, artwork contents, or credentials.
+- Target paths, imported artwork, and editing drafts are not saved across app launches. Shortcut, appearance, and language preferences are saved. Logs must not include full private paths, artwork contents, or credentials.
 - There is no standalone PNG/ICNS export, edit history, icon backup/undo, preset manager, automatic updater, or plugin marketplace.
 
 ## Language
 
-The app follows the preferred supported language macOS resolves for it: Simplified Chinese or English, with English as fallback. Change the app language in macOS settings and restart to apply it. There is no in-app language selector. Language affects presentation, not folder names, paths, or user-entered badge text.
+The app follows the preferred supported language macOS resolves for it — Simplified Chinese or English, with English as fallback — unless you choose a language in **Settings → Language**. Choose **Follow System**, **简体中文**, or **English**. A manual choice applies immediately to the panel, settings, and native menus and is saved until you select Follow System again. Follow System is resolved at startup and when selected; macOS language changes are not monitored live. Language affects presentation, not folder names, paths, or user-entered badge text.
 
 ## Build from source
 
@@ -122,7 +124,7 @@ Launch a packaged app from Finder, Spotlight, or `open path/to/Dimple.app`. Runn
 
 ## Uninstall
 
-If you want system default icons, restore them in the app before uninstalling. Quit Dimple from the menu bar, then move it from **Applications** to the Trash. Removing the app does not remove icons already applied to folders or restore overwritten custom icons. Optionally remove `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json` to reset the saved shortcut. Source checkouts and development toolchains are managed separately.
+If you want system default icons, restore them in the app before uninstalling. Quit Dimple from the menu bar, then move it from **Applications** to the Trash. Removing the app does not remove icons already applied to folders or restore overwritten custom icons. Optionally remove `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json` and `language.json` to reset the saved shortcut and language. Source checkouts and development toolchains are managed separately.
 
 ## License and upstream
 

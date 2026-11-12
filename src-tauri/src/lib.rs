@@ -1,8 +1,10 @@
 mod assets;
 mod builtins;
+mod config;
 mod entry;
 mod icon;
 mod instance;
+mod language;
 pub mod localization;
 mod macos;
 mod native_menu;
@@ -56,11 +58,15 @@ fn session_snapshot<R: tauri::Runtime>(
 }
 
 #[tauri::command]
-fn get_session<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    session: tauri::State<'_, Session>,
-) -> SessionSnapshot {
-    session_snapshot(&app, session.inner().clone())
+fn get_session<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SessionSnapshot {
+    let locale = app.state::<language::Language>().locale();
+    session_snapshot(
+        &app,
+        Session {
+            version: env!("CARGO_PKG_VERSION"),
+            locale,
+        },
+    )
 }
 
 #[tauri::command]
@@ -116,37 +122,17 @@ pub fn run() {
         .setup(|app| {
             instance::install(app.handle())?;
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            let locale = Locale::current();
+            let language = language::Language::load(app.handle());
+            let locale = language.locale();
+            app.manage(language);
             app.set_menu(native_menu::build(app.handle(), locale)?)?;
-            app.manage(Session {
-                version: env!("CARGO_PKG_VERSION"),
-                locale,
-            });
             settings::init(app.handle());
             let messages = locale.messages();
-            let show = tauri::menu::MenuItem::with_id(
-                app,
-                "show",
-                &messages["entry.show"],
-                true,
-                None::<&str>,
-            )?;
-            let settings_item = tauri::menu::MenuItem::with_id(
-                app,
-                "settings",
-                &messages["settings.title"],
-                true,
-                None::<&str>,
-            )?;
-            let quit = tauri::menu::PredefinedMenuItem::quit(app, Some(&messages["menu.quit"]))?;
-            let about =
-                tauri::menu::PredefinedMenuItem::about(app, Some(&messages["menu.about"]), None)?;
-            let menu = tauri::menu::Menu::with_items(app, &[&show, &settings_item, &about, &quit])?;
             let tray = tauri::tray::TrayIconBuilder::with_id("main-tray")
                 .icon(tauri::include_image!("icons/tray-folder.png"))
                 .icon_as_template(true)
                 .tooltip(&messages["app.name"])
-                .menu(&menu)
+                .menu(&native_menu::tray(app.handle(), locale)?)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| {
                     if e.id.as_ref() == "settings" {
@@ -185,6 +171,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_session,
+            language::get_language,
+            language::set_language,
             panel::request_hide_panel,
             settings::get_shortcut_settings,
             settings::save_shortcut_settings,
