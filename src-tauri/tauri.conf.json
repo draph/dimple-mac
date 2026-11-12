@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Folderify Desktop",
+  "productName": "Dimple",
   "version": "0.1.0",
   "identifier": "dev.efun.folderify-desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Folderify Desktop",
+        "title": "Dimple",
         "width": 480,
         "height": 560,
         "minWidth": 360,
@@ -50,6 +50,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
+      "signingIdentity": "-",
+      "hardenedRuntime": false,
       "infoPlist": "Info.plist"
     },
     "resources": {

@@ -212,7 +212,7 @@ pub fn run() {
             entry::commit_operation
         ])
         .build(tauri::generate_context!())
-        .expect("Failed to start Folderify Desktop")
+        .expect("Failed to start Dimple")
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = &event
                 && entry::request_quit(app)

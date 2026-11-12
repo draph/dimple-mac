@@ -1,4 +1,4 @@
-# Folderify Desktop
+# Dimple — Folder icons for Mac
 
 [English](README.md) | 简体中文
 
@@ -8,7 +8,7 @@
 
 一款 macOS 菜单栏工具，为文件夹添加具有原生凹陷质感的自定义图标。选中文件夹、选择徽标、应用，在同一个面板完成。
 
-Folderify Desktop 是独立维护的图形界面项目，以 [lgarron/folderify](https://github.com/lgarron/folderify) 为参考，并非其官方桌面版本。使用 Tauri v2、Rust、React、TypeScript、Vite 和 Tailwind。
+Dimple 是独立维护的图形界面项目，以 [lgarron/folderify](https://github.com/lgarron/folderify) 为参考，并非其官方桌面版本。使用 Tauri v2、Rust、React、TypeScript、Vite 和 Tailwind。
 
 ## 功能
 
@@ -24,13 +24,13 @@ Folderify Desktop 是独立维护的图形界面项目，以 [lgarron/folderify]
 
 发布目标是面向 Apple Silicon 和 Intel Mac 的 Universal 应用及 DMG。最低 macOS 版本、已测硬件和存储组合、下载位置、SHA-256 及签名／公证状态将在公开前确定。构建配置中的系统版本不代表已经验证的支持范围。
 
-安装发布版时，打开 DMG，将 **Folderify Desktop** 拖入**应用程序**，然后启动。安装包自带运行所需资源，无需安装 Python、ImageMagick、Homebrew 或开发工具。
+安装发布版时，打开 DMG，将 **Dimple** 拖入**应用程序**，然后启动。安装包自带运行所需资源，无需安装 Python、ImageMagick、Homebrew 或开发工具。
 
 遵循对应版本附带的签名和安装说明。未签名或未公证的构建须标为预发布；安装流程不要求关闭 macOS 安全保护。
 
 ## 授权
 
-首次使用 Finder 选中项读取功能时，应用会请求 Finder 自动化权限。拒绝后仍可手动选择文件夹或将其拖入面板。需要修改权限时，在**系统设置 → 隐私与安全性 → 自动化**中查看 Folderify Desktop 对 Finder 的访问；系统名称可能因 macOS 版本而异。
+首次使用 Finder 选中项读取功能时，应用会请求 Finder 自动化权限。拒绝后仍可手动选择文件夹或将其拖入面板。需要修改权限时，在**系统设置 → 隐私与安全性 → 自动化**中查看 Dimple 对 Finder 的访问；系统名称可能因 macOS 版本而异。
 
 应用不自动提权。目标须为可写文件夹；系统保护目录和应用包会被拒绝。
 
@@ -90,8 +90,8 @@ Finder 不在前台时，请手动选择目标。手动选择的目标在重新�
 使用 Node.js 24、npm 12、`rust-toolchain.toml` 固定的 Rust 工具链，以及带 macOS SDK 的 Xcode 或 Command Line Tools。尚未安装 Rust 时，先通过 [rustup.rs](https://rustup.rs/) 安装。依赖由 npm 和 Cargo lockfile 固定。
 
 ```sh
-git clone https://github.com/draph/folderify-desktop.git
-cd folderify-desktop
+git clone https://github.com/draph/dimple-mac.git
+cd dimple-mac
 source "$HOME/.cargo/env"
 npm ci
 npm run tauri dev
@@ -114,11 +114,13 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
 ```
 
-构建产物位于 `src-tauri/target/` 下。完成打包本身不代表已签名、公证或通过运行兼容性验证。`check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。文件夹写入测试必须使用隔离临时目录。
+构建产物位于 `src-tauri/target/` 下。本地应用包使用完整的 ad-hoc 签名，暂不启用 hardened runtime；这不等于 Developer ID 签名或公证。可用 `codesign --verify --deep --strict --verbose=2 path/to/Dimple.app` 验证应用包。发行签名和运行兼容性仍须单独验证。`check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。文件夹写入测试必须使用隔离临时目录。
+
+打包后的应用应从 Finder、聚焦或 `open path/to/Dimple.app` 启动。直接运行 `Contents/MacOS` 内的可执行文件可能继承终端宿主的 macOS 进程归属。macOS 26 中，与已禁用宿主的残留菜单栏关联可能导致 Dimple 开关已开启但图标仍隐藏。不要将重置控制中心或修改其私有配置作为常规安装步骤。应用标识继续保留 `dev.efun.folderify-desktop`，以沿用改名前的设置和系统权限。
 
 ## 卸载
 
-如果希望恢复系统默认图标，请先在应用中执行恢复。从菜单栏退出 Folderify Desktop，再将其从**应用程序**移至废纸篓。删除应用不会清除已经应用的文件夹图标，也不会恢复被覆盖的自定义图标。源码目录和开发工具链独立管理。
+如果希望恢复系统默认图标，请先在应用中执行恢复。从菜单栏退出 Dimple，再将其从**应用程序**移至废纸篓。删除应用不会清除已经应用的文件夹图标，也不会恢复被覆盖的自定义图标。源码目录和开发工具链独立管理。
 
 可选删除 `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json`，以重置保存的快捷键。
 

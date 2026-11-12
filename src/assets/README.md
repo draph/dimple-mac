@@ -1,7 +1,7 @@
 # Built-in icon library
 
 All 20 SVG badges in this directory are original geometric artwork created for
-Folderify Desktop with AI assistance, covered by the project's
+Dimple with AI assistance, covered by the project's
 [MIT license](../../LICENSE) (Copyright (c) 2026 efun). They contain no fonts,
 brand logos, SF Symbols, or external resources, and are not traced from a
 third-party icon collection.

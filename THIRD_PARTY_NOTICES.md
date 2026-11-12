@@ -3,7 +3,7 @@
 ## Original built-in badges
 
 The 20 SVG badges listed in `src/assets/icons.json` are original geometric
-artwork created for Folderify Desktop with AI assistance, Copyright (c) 2026
+artwork created for Dimple with AI assistance, Copyright (c) 2026
 efun, under this project's MIT license. The complete MIT text accompanies the
 application in `LICENSE`. These badges use no third-party icon artwork,
 brand logos, SF Symbols, or fonts. Their per-icon source paths and license

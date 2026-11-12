@@ -21,12 +21,12 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Customize with Folderify</string>
+				<string>Customize with Dimple</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>folderify</string>
 			<key>NSPortName</key>
-			<string>Folderify Desktop</string>
+			<string>Dimple</string>
 			<key>NSRequiredContext</key>
 			<dict/>
 			<key>NSReturnTypes</key>

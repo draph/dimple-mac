@@ -1,7 +1,7 @@
 # Test badge
 
-`geometric-cross.svg` is an original geometric test mask created for Folderify
-Desktop, with AI assistance. It uses no upstream or Apple artwork and is covered
+`geometric-cross.svg` is an original geometric test mask created for Dimple,
+with AI assistance. It uses no upstream or Apple artwork and is covered
 by the project's [MIT license](../../../LICENSE) (Copyright (c) 2026 efun).
 
 The black cross has a transparent background, a 384 × 384 viewBox, and a

@@ -1,4 +1,4 @@
-# Folderify Desktop
+# Dimple — Folder icons for Mac
 
 English | [简体中文](README.zh-CN.md)
 
@@ -8,7 +8,7 @@ The current development build supports folder selection, target details and remo
 
 A macOS menu bar app for giving folders custom icons with a native recessed look. Select folders, choose a badge, and apply—all in one panel.
 
-Folderify Desktop is an independently maintained GUI project inspired by [lgarron/folderify](https://github.com/lgarron/folderify), not its official desktop app. It uses Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.
+Dimple is an independently maintained GUI project inspired by [lgarron/folderify](https://github.com/lgarron/folderify), not its official desktop app. It uses Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.
 
 ## Features
 
@@ -24,13 +24,13 @@ Folderify Desktop is an independently maintained GUI project inspired by [lgarro
 
 The release distribution is intended to provide a Universal app and DMG for Apple Silicon and Intel Macs. Minimum macOS version, tested hardware and storage combinations, download location, SHA-256, and signing/notarization status remain to be confirmed before publication. The version in the build configuration is not a verified support claim.
 
-To install the release, open its DMG, drag **Folderify Desktop** to **Applications**, and launch it. The installed app includes its runtime resources; Python, ImageMagick, Homebrew, and development tools are not required.
+To install the release, open its DMG, drag **Dimple** to **Applications**, and launch it. The installed app includes its runtime resources; Python, ImageMagick, Homebrew, and development tools are not required.
 
 Follow the signing and installation notes supplied with that release. An unsigned or unnotarized build must be labeled as a prerelease; disabling macOS security protections is not part of the installation procedure.
 
 ## Permissions
 
-Finder automation permission is requested when you first use Finder selection reading. If you decline, you can still select folders manually or drag them into the panel. To change the permission later, open **System Settings → Privacy & Security → Automation** and look for Folderify Desktop's Finder access; system wording varies by macOS version.
+Finder automation permission is requested when you first use Finder selection reading. If you decline, you can still select folders manually or drag them into the panel. To change the permission later, open **System Settings → Privacy & Security → Automation** and look for Dimple's Finder access; system wording varies by macOS version.
 
 The app does not elevate privileges. Each target must be a writable folder; system-protected directories and application bundles are rejected.
 
@@ -90,8 +90,8 @@ The app follows the preferred supported language macOS resolves for it: Simplifi
 Use Node.js 24, npm 12, the Rust toolchain pinned in `rust-toolchain.toml`, and Xcode or Command Line Tools with the macOS SDK. Install Rust from [rustup.rs](https://rustup.rs/) if needed. Dependencies are pinned by the npm and Cargo lockfiles.
 
 ```sh
-git clone https://github.com/draph/folderify-desktop.git
-cd folderify-desktop
+git clone https://github.com/draph/dimple-mac.git
+cd dimple-mac
 source "$HOME/.cargo/env"
 npm ci
 npm run tauri dev
@@ -114,11 +114,13 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
 ```
 
-Build outputs are under `src-tauri/target/`; packaging does not itself establish signing, notarization, or runtime compatibility. `check:rust` runs fmt, Clippy with warnings treated as errors, and unit tests. Folder-writing tests must use isolated temporary directories.
+Build outputs are under `src-tauri/target/`. Local app bundles use a complete ad-hoc signature with hardened runtime disabled; this is not Developer ID signing or notarization. Verify a bundled app with `codesign --verify --deep --strict --verbose=2 path/to/Dimple.app`. Distribution signing and runtime compatibility still require separate verification. `check:rust` runs fmt, Clippy with warnings treated as errors, and unit tests. Folder-writing tests must use isolated temporary directories.
+
+Launch a packaged app from Finder, Spotlight, or `open path/to/Dimple.app`. Running the executable inside `Contents/MacOS` directly can inherit its terminal host's macOS process attribution. On macOS 26, a stale menu-bar association with a disabled host can hide the icon even when Dimple is allowed. Do not reset Control Center or edit its private preferences as a routine installation step. The application identifier remains `dev.efun.folderify-desktop` to preserve settings and system permissions across the rename.
 
 ## Uninstall
 
-If you want system default icons, restore them in the app before uninstalling. Quit Folderify Desktop from the menu bar, then move it from **Applications** to the Trash. Removing the app does not remove icons already applied to folders or restore overwritten custom icons. Optionally remove `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json` to reset the saved shortcut. Source checkouts and development toolchains are managed separately.
+If you want system default icons, restore them in the app before uninstalling. Quit Dimple from the menu bar, then move it from **Applications** to the Trash. Removing the app does not remove icons already applied to folders or restore overwritten custom icons. Optionally remove `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json` to reset the saved shortcut. Source checkouts and development toolchains are managed separately.
 
 ## License and upstream
 
