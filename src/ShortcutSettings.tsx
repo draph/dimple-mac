@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { errorMessage, translate, type Locale } from "./i18n";
 import { captureShortcut, displayShortcut, type ShortcutStatus, type ShortcutSettings as Value } from "./shortcut";
 
-export function ShortcutSettings({ locale, blocked, onOpenChange }: { locale: Locale; blocked: boolean; onOpenChange: (open: boolean) => void }) {
+export function ShortcutSettings({ locale, version, blocked, onOpenChange }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void }) {
   const [status, setStatus] = useState<ShortcutStatus | null>(null);
   const [draft, setDraft] = useState<Value | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -114,5 +114,12 @@ export function ShortcutSettings({ locale, blocked, onOpenChange }: { locale: Lo
     {failure != null && <p role="alert" className="error">{errorMessage(locale, failure)}</p>}
     {saved && <p role="status">{t("settings.saved")}</p>}
     <button disabled={saving || capturing || status.uncertain.length > 0} onClick={() => void save()}>{t("settings.save")}</button>
+    <section className="about" aria-labelledby="about-title">
+      <h2 id="about-title">{t("about.title")}</h2>
+      <p>{t("about.name")}</p>
+      <p>{translate(locale, "about.version", { version })}</p>
+      <button disabled aria-describedby="update-unavailable">{t("about.update")}</button>
+      <p id="update-unavailable" className="muted">{t("about.unavailable")}</p>
+    </section>
   </section>;
 }

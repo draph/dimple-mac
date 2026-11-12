@@ -187,7 +187,7 @@ export default function App() {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></svg>
         </button>
       </header>
-      <ShortcutSettings locale={locale} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} />
+      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} />
       <div className="editor" hidden={showSettings}>
       <div className="target-actions"><button className="quiet" onClick={() => command("quit_app")}>{t("menu.quit")}</button></div>
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
