@@ -112,10 +112,39 @@ pub fn tray(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri:
     Menu::with_items(app, &[&show, &settings, &about, &quit])
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum MenuMode {
+    Full,
+    Recording,
+}
+
+fn menu_mode(capturing: bool) -> MenuMode {
+    if capturing {
+        MenuMode::Recording
+    } else {
+        MenuMode::Full
+    }
+}
+
 pub fn apply(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<()> {
-    app.set_menu(build(app, locale)?)?;
+    let menu = match menu_mode(crate::settings::capturing(app)) {
+        MenuMode::Recording => recording(app, locale)?,
+        MenuMode::Full => build(app, locale)?,
+    };
+    app.set_menu(menu)?;
     if let Some(icon) = app.tray_by_id("main-tray") {
         icon.set_menu(Some(tray(app, locale)?))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_capture_selects_the_recording_menu() {
+        assert_eq!(menu_mode(true), MenuMode::Recording);
+        assert_eq!(menu_mode(false), MenuMode::Full);
+    }
 }

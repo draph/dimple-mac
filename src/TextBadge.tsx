@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { errorMessage, translate, type Session } from "./i18n";
+import { errorMessage, translate, type Locale, type Session } from "./i18n";
 
-export function TextBadge({ session, disabled, refresh, onPending }: {
+export function TextBadge({ locale, session, disabled, refresh, onPending }: {
+  locale: Locale;
   session: Session;
   disabled: boolean;
   refresh: () => Promise<Session | null>;
@@ -57,7 +58,7 @@ export function TextBadge({ session, disabled, refresh, onPending }: {
     if (!working) setText(session.entry.text ?? "");
   }, [session.entry.text, working]);
   useEffect(() => { setError(null); }, [session.entry.badge.id]);
-  const t = (key: string) => translate(session.locale, key);
+  const t = (key: string) => translate(locale, key);
   return <div className="text-badge">
     <label htmlFor="badge-text">{t("text.label")}</label>
     <textarea id="badge-text" rows={1} value={text} disabled={disabled}
@@ -67,7 +68,7 @@ export function TextBadge({ session, disabled, refresh, onPending }: {
       onChange={event => enqueue(event.target.value, composing.current)} />
     <p id="badge-text-hint" className="muted">{t("text.hint")}</p>
     <p id="badge-text-count" className="muted" aria-live="polite">{!working && session.entry.text !== null && session.entry.textCount !== null
-      ? translate(session.locale, "text.count", { count: session.entry.textCount }) : ""}</p>
-    {error !== null && <p role="alert" className="error">{errorMessage(session.locale, error)}</p>}
+      ? translate(locale, "text.count", { count: session.entry.textCount }) : ""}</p>
+    {error !== null && <p role="alert" className="error">{errorMessage(locale, error)}</p>}
   </div>;
 }

@@ -226,6 +226,9 @@ pub fn handle(app: &tauri::AppHandle, key: &Shortcut) -> bool {
     }
 }
 pub fn protects_panel<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    capturing(app)
+}
+pub(crate) fn capturing<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     app.try_state::<Settings>()
         .is_some_and(|s| s.0.lock().unwrap().capturing)
 }

@@ -75,11 +75,11 @@ fn change(
     desired: Preference,
     system: Locale,
 ) -> Result<(), AppError> {
-    if desired == status.preference && status.error.is_none() {
-        return Ok(());
-    }
     let previous = status.locale;
     let next = desired.resolve(system);
+    if desired == status.preference && status.error.is_none() && next == status.locale {
+        return Ok(());
+    }
     if backend.apply(next).is_err() {
         let _ = backend.apply(previous);
         return Err(error("apply"));
@@ -240,6 +240,20 @@ mod tests {
         assert_eq!(status.locale, Locale::En);
         assert_eq!(status.revision, 2);
         assert_eq!(backend.applied, [Locale::ZhHans, Locale::En]);
+        change(
+            &mut backend,
+            &mut status,
+            Preference::System,
+            Locale::ZhHans,
+        )
+        .unwrap();
+        assert_eq!(status.preference, Preference::System);
+        assert_eq!(status.locale, Locale::ZhHans);
+        assert_eq!(status.revision, 3);
+        assert_eq!(
+            backend.applied,
+            [Locale::ZhHans, Locale::En, Locale::ZhHans]
+        );
     }
 
     #[test]

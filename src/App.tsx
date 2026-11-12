@@ -282,7 +282,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {matchingIcons.length === 0 && <p role="status" className="empty">{t("icons.empty")}</p>}
         </div>
         <div id="badge-panel-text" role="tabpanel" aria-labelledby="badge-tab-text" hidden={badgeTab !== "text"}>
-        {session && <TextBadge session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
+        {session && <TextBadge locale={locale} session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
         </div>
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         {!icons.some(icon => icon.id === badgeId) && entry?.badge.text == null && <p className="muted">{t("badge.imported")}</p>}
@@ -291,7 +291,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
       </section>
       <section>
-        {session && <Adjustments session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} />}
+        {session && <Adjustments locale={locale} session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} />}
       </section>
       </div>
       {(failure || progress || (prepared && !prepared.confirmationToken)) && <div className="operation-feedback">

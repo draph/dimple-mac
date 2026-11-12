@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { errorMessage, translate, type Session } from "./i18n";
+import { errorMessage, translate, type Locale, type Session } from "./i18n";
 import type { RenderParams } from "./contracts";
 import { defaultParams, themes, validParams } from "./renderParams";
 import { sameContext } from "./session";
 
-export function Adjustments({ session, disabled, refresh, onChange }: {
-  session: Session; disabled: boolean; refresh: () => Promise<Session | null>;
+export function Adjustments({ locale, session, disabled, refresh, onChange }: {
+  locale: Locale; session: Session; disabled: boolean; refresh: () => Promise<Session | null>;
   onChange: (params: RenderParams | null, pending: boolean) => void;
 }) {
   const [params, setParams] = useState(session.entry.params);
@@ -59,7 +59,7 @@ export function Adjustments({ session, disabled, refresh, onChange }: {
   useEffect(() => {
     if (!sending.current) { value.current = session.entry.params; setParams(session.entry.params); if (!invalidRef.current) setColor(session.entry.params.theme === "native" ? "#808080" : session.entry.params.theme); }
   }, [session.entry.params]);
-  const t = (key: string) => translate(session.locale, key);
+  const t = (key: string) => translate(locale, key);
   return <details className="adjustments"><summary>{t("adjust.heading")}</summary>
     <fieldset disabled={disabled}>
       {([["scale", .25, 2, .01], ["offsetX", -100, 100, 1], ["offsetY", -100, 100, 1]] as const).map(([name, min, max, step]) =>
@@ -83,6 +83,6 @@ export function Adjustments({ session, disabled, refresh, onChange }: {
       {invalid && <p role="alert" className="error">{t("adjust.invalid")}</p>}
       <button onClick={() => enqueue({ ...defaultParams })}>{t("adjust.reset")}</button>
     </fieldset>
-    {error !== null && <p role="alert" className="error">{errorMessage(session.locale, error)}</p>}
+    {error !== null && <p role="alert" className="error">{errorMessage(locale, error)}</p>}
   </details>;
 }
