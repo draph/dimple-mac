@@ -6,7 +6,7 @@ import type { Session } from "./i18n.ts";
 function session(revision = 1): Session {
   return {
     version: "0.1.0", locale: "en",
-    entry: { params: {scale: 1, offsetX: 0, offsetY: 0, theme: "native"}, badge: { id: "code", width: 384, height: 256, opaque: false, text: null }, badgeError: null, importing: false, text: null, textCount: null, textPending: false, revision, editRevision: 1, pinned: false, source: "picker", items: [{ id: "one", path: "/tmp/one", actualPath: "/tmp/one", linked: false, kind: "directory", error: null }], issues: [], error: null, choosing: false, reading: false, checking: false, preparing: false },
+    entry: { params: {scale: 1, offsetX: 0, offsetY: 0, theme: "native"}, badge: { id: "code", width: 384, height: 256, opaque: false, text: null }, badgeError: null, importing: false, text: null, textCount: null, textPending: false, revision, editRevision: 1, source: "picker", items: [{ id: "one", path: "/tmp/one", actualPath: "/tmp/one", linked: false, kind: "directory", error: null }], issues: [], error: null, choosing: false, reading: false, checking: false, preparing: false },
     operation: { canStop: false, canRetry: false, canContinue: false, revision, prepared: null, progress: null },
   };
 }
@@ -53,7 +53,6 @@ test("late operation snapshots cannot resurrect results cleared by a new edit", 
 test("exports survive notifications but reject accepted edits and target replacement", () => {
   const draft = session();
   const updated = session(2);
-  updated.entry.pinned = true;
   assert.ok(sameDraft(draft, updated));
   assert.ok(!sameDraft(draft, null));
   updated.entry.editRevision++;

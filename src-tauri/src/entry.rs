@@ -23,7 +23,6 @@ pub struct Snapshot {
     mask: Option<std::sync::Arc<crate::assets::Mask>>,
     revision: u64,
     edit_revision: u64,
-    pinned: bool,
     #[serde(skip)]
     cleanup: Option<(String, u64)>,
     #[serde(skip)]
@@ -151,7 +150,6 @@ fn finish_success<R: tauri::Runtime>(app: &tauri::AppHandle<R>, token: &(String,
         return true;
     }
     if release_success(&mut s, token) {
-        hide_locked(app, &s, crate::panel::HideReason::Success);
         commit_update(app, s);
     }
     false
@@ -1342,10 +1340,6 @@ pub fn set_render_params<R: tauri::Runtime>(
     commit_update(&app, s);
     Ok(())
 }
-#[tauri::command]
-pub fn set_pinned<R: tauri::Runtime>(app: tauri::AppHandle<R>, pinned: bool) {
-    update(&app, |s| s.pinned = pinned);
-}
 fn claim_commit(
     s: &mut Snapshot,
     operation_id: &str,
@@ -1627,50 +1621,22 @@ fn finish_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         app.exit(0);
     }
 }
-fn allows_hide(s: &Snapshot, reason: crate::panel::HideReason) -> bool {
-    use crate::panel::HideReason;
-    if s.operation_locked() || candidate_pending(s) {
-        return false;
-    }
-    match reason {
-        HideReason::Explicit => true,
-        HideReason::Success => !s.pinned,
-        HideReason::Blur => {
-            !s.pinned
-                && s.error.is_none()
-                && s.badge_error.is_none()
-                && s.issues.is_empty()
-                && s.operation.as_ref().is_none_or(|_| all_succeeded(s))
-        }
-    }
+fn allows_hide(s: &Snapshot) -> bool {
+    !s.operation_locked() && !candidate_pending(s)
 }
-fn hide_locked<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    s: &Snapshot,
-    reason: crate::panel::HideReason,
-) {
-    if allows_hide(s, reason)
-        && (reason == crate::panel::HideReason::Explicit || !crate::settings::protects_panel(app))
+pub fn hide_if_allowed<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let inbox = app.state::<Inbox>();
+    let s = inbox.0.lock().unwrap();
+    if allows_hide(&s)
         && let Some(w) = app.get_webview_window("main")
         && w.hide().is_ok()
     {
         let _ = app.emit("panel-visibility", false);
     }
 }
-pub fn hide_if_allowed<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    reason: crate::panel::HideReason,
-) {
-    let inbox = app.state::<Inbox>();
-    let s = inbox.0.lock().unwrap();
-    hide_locked(app, &s, reason);
-}
 #[cfg(test)]
 pub fn can_hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
-    allows_hide(
-        &app.state::<Inbox>().0.lock().unwrap(),
-        crate::panel::HideReason::Explicit,
-    )
+    allows_hide(&app.state::<Inbox>().0.lock().unwrap())
 }
 
 #[cfg(test)]
@@ -1792,16 +1758,8 @@ mod tests {
         s
     }
     #[test]
-    fn hiding_matrix_protects_candidates_writes_and_results_but_explicit_escape_ignores_pin() {
-        use crate::panel::HideReason::{Blur, Explicit, Success};
-        let mut s = super::Snapshot::default();
-        for reason in [Blur, Explicit, Success] {
-            assert!(super::allows_hide(&s, reason));
-        }
-        s.pinned = true;
-        assert!(!super::allows_hide(&s, Blur));
-        assert!(!super::allows_hide(&s, Success));
-        assert!(super::allows_hide(&s, Explicit));
+    fn explicit_hiding_protects_candidates_and_unresolved_writes() {
+        assert!(super::allows_hide(&super::Snapshot::default()));
         for candidate in 0..6 {
             let mut s = super::Snapshot::default();
             match candidate {
@@ -1821,31 +1779,25 @@ mod tests {
                     )));
                 }
             }
-            for reason in [Blur, Explicit, Success] {
-                assert!(!super::allows_hide(&s, reason));
-            }
+            assert!(!super::allows_hide(&s));
         }
         for status in ["failed", "pending", "unknown", "succeeded"] {
             let mut s = successful_state();
             s.operation.as_mut().unwrap().items[0].status = status.into();
-            assert_eq!(super::allows_hide(&s, Blur), status == "succeeded");
-            assert!(super::allows_hide(&s, Explicit));
+            assert!(super::allows_hide(&s));
             for phase in ["checking", "running", "uncertain"] {
                 s.operation.as_mut().unwrap().phase = phase.into();
-                for reason in [Blur, Explicit, Success] {
-                    assert!(!super::allows_hide(&s, reason));
-                }
+                assert!(!super::allows_hide(&s));
             }
         }
         let mut s = super::Snapshot {
             error: Some("checkFailed".into()),
             ..Default::default()
         };
-        assert!(!super::allows_hide(&s, Blur));
-        assert!(super::allows_hide(&s, Explicit));
+        assert!(super::allows_hide(&s));
         s.error = None;
         s.badge_error = Some("checkFailed".into());
-        assert!(!super::allows_hide(&s, Blur));
+        assert!(super::allows_hide(&s));
     }
     #[test]
     fn render_param_edits_restore_snapshots_and_reject_stale_or_locked_edits() {
@@ -1901,10 +1853,9 @@ mod tests {
         }
     }
     #[test]
-    fn successful_release_waits_for_candidates_and_preserves_pin() {
+    fn successful_release_waits_for_candidates() {
         for pending in 0..4 {
             let mut s = successful_state();
-            s.pinned = true;
             let token = s.cleanup.clone().unwrap();
             s.choosing = pending == 0;
             s.checking = pending == 1;
@@ -1920,7 +1871,6 @@ mod tests {
             assert!(s.items.is_empty());
             assert!(s.operation.is_none());
             assert!(s.cleanup.is_none());
-            assert!(s.pinned);
             assert_eq!(s.edit_revision, token.1 + 1);
         }
     }
@@ -1944,7 +1894,30 @@ mod tests {
         assert!(!super::release_success(&mut s, &token));
     }
     #[test]
-    fn queued_success_callback_rechecks_input_before_hiding() {
+    fn successful_callback_releases_targets_without_hiding_the_panel() {
+        use tauri::Listener;
+        let state = successful_state();
+        let token = state.cleanup.clone().unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let _window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let visibility_events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received = visibility_events.clone();
+        app.listen("panel-visibility", move |event| {
+            received.lock().unwrap().push(event.payload().to_owned());
+        });
+        assert!(!super::finish_success(app.handle(), &token));
+        let snapshot = super::session(app.handle()).0;
+        assert!(snapshot.items.is_empty());
+        assert!(snapshot.operation.is_none());
+        assert!(visibility_events.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn queued_success_callback_rechecks_input_before_releasing_targets() {
         use tauri::Manager;
         let state = successful_state();
         let token = state.cleanup.clone().unwrap();
@@ -2258,7 +2231,6 @@ mod tests {
                 crate::get_session,
                 super::begin_edit,
                 super::set_render_params,
-                super::set_pinned,
                 super::get_entry,
                 super::prepare_operation,
                 super::prepare_recovery,
@@ -2493,7 +2465,6 @@ mod tests {
             "{done}"
         );
         assert!(!crate::icon::fingerprint(&temp.0).unwrap().custom);
-        ipc("set_pinned", json!({"pinned":true})).unwrap();
         for _ in 0..1000 {
             if entry()["items"].as_array().unwrap().is_empty() {
                 break;
@@ -2504,7 +2475,6 @@ mod tests {
         assert!(released["entry"]["items"].as_array().unwrap().is_empty());
         assert!(released["operation"]["progress"].is_null());
         assert!(released["operation"]["prepared"].is_null());
-        assert_eq!(released["entry"]["pinned"], true);
 
         // Every native target source reaches the same registered-ID write path.
         std::fs::write(temp.0.join("body.txt"), b"unchanged body").unwrap();

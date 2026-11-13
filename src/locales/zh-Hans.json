@@ -1,5 +1,4 @@
 {
-  "window.pin": "固定面板",
   "app.name": "Dimple",
   "app.brand": "Dimple",
   "app.heading": "让文件夹更好认",
@@ -121,7 +120,7 @@
   "operation.error.confirmation": "目标的图标状态已变化，需要重新确认后再操作。",
   "operation.error.uncertain": "写入后无法确认目标状态，已阻止进一步写入。请退出并重新打开应用后再试。",
   "operation.error.edit": "请先开始新的编辑，再创建新的操作。",
-  "badge.import": "导入 PNG／SVG",
+  "badge.import": "选择图片",
   "badge.imported": "已导入徽标",
   "badge.loading": "正在检查并载入徽标…",
   "badge.opaque": "此 PNG 完全不透明，会形成实心矩形；如需轮廓效果，请使用透明背景素材。",

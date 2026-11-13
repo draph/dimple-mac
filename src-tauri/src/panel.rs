@@ -1,26 +1,10 @@
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager};
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum HideReason {
-    Blur,
-    Explicit,
-    Success,
-}
-
-pub fn hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>, reason: HideReason) {
+pub fn hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let on_main = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Some(w) = on_main.get_webview_window("main") {
-            if reason == HideReason::Blur && w.is_focused().unwrap_or(true) {
-                return;
-            }
-            crate::entry::hide_if_allowed(&on_main, reason);
-        }
+        crate::entry::hide_if_allowed(&on_main);
     });
-}
-#[tauri::command]
-pub fn request_hide_panel(app: tauri::AppHandle) {
-    hide(&app, HideReason::Explicit);
 }
 
 #[derive(Debug, PartialEq)]

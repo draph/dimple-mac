@@ -103,16 +103,13 @@ pub fn run() {
         .manage(settings::Settings::default())
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "hide-panel" {
-                panel::hide(app, panel::HideReason::Explicit);
+                panel::hide(app);
             }
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                panel::hide(window.app_handle(), panel::HideReason::Explicit);
-            }
-            tauri::WindowEvent::Focused(false) => {
-                panel::hide(window.app_handle(), panel::HideReason::Blur)
+                panel::hide(window.app_handle());
             }
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
                 entry::receive(window.app_handle(), "window-drop", paths.clone())
@@ -167,13 +164,13 @@ pub fn run() {
                 })
                 .build(app)?;
             macos::install(app.handle(), &tray)?;
+            entry::show(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_session,
             language::get_language,
             language::set_language,
-            panel::request_hide_panel,
             settings::get_shortcut_settings,
             settings::save_shortcut_settings,
             settings::set_shortcut_capture,
@@ -185,7 +182,6 @@ pub fn run() {
             entry::begin_edit,
             entry::set_render_params,
             panel_visible,
-            entry::set_pinned,
             entry::choose_targets,
             entry::choose_badge,
             entry::select_badge,

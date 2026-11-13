@@ -1,5 +1,4 @@
 {
-  "window.pin": "Keep panel open",
   "app.name": "Dimple",
   "app.brand": "Dimple",
   "app.heading": "Make folders easy to recognize",
@@ -121,7 +120,7 @@
   "operation.error.confirmation": "The target icon changed. Check and confirm again before writing.",
   "operation.error.uncertain": "The target state could not be confirmed after writing. Quit and reopen the app before trying again.",
   "operation.error.edit": "Start a new edit before creating another operation.",
-  "badge.import": "Import PNG / SVG",
+  "badge.import": "Choose Image",
   "badge.imported": "Imported badge",
   "badge.loading": "Checking and loading the badge…",
   "badge.opaque": "This PNG has no transparency and produces a solid rectangle. Use a transparent background for a shaped badge.",

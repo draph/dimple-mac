@@ -13,7 +13,6 @@ import type { PreparedOperation, PrepareOperation, RenderParams } from "./contra
 import { TextBadge } from "./TextBadge";
 import { Adjustments } from "./Adjustments";
 import { ShortcutSettings } from "./ShortcutSettings";
-import { shouldHideOnEscape } from "./shortcut";
 import { defaultParams } from "./renderParams";
 import type { AppearanceController } from "./appearance";
 import { acceptLanguage, type LanguagePreference, type LanguageStatus } from "./language";
@@ -195,22 +194,11 @@ export default function App({ appearance }: { appearance: AppearanceController }
     } catch (error) { if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error }); }
     finally { if (generation === epoch.current) { submitGuard.current = false; setSubmitting(false); } }
   };
-  useEffect(() => {
-    const escape = (event: KeyboardEvent) => {
-      if (shouldHideOnEscape(event, !!dialog.current?.open, !!entry?.choosing, false) && !event.defaultPrevented) {
-        event.preventDefault();
-        void invoke("request_hide_panel").catch(error => setFailure({ error }));
-      }
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [entry?.choosing]);
   const name = (path: string) => path.substring(path.lastIndexOf("/") + 1) || path;
   return (
     <main className="panel">
       <header className="panel-header" hidden={showSettings}>
         <h1>{t("app.name")}</h1>
-        <button className="quiet" disabled={!session} aria-pressed={entry?.pinned ?? false} onClick={() => command("set_pinned", { pinned: !entry?.pinned })}>{t("window.pin")}</button>
         <button ref={settingsButton} className="quiet settings-button" disabled={blockSettings} aria-label={t("settings.title")} onClick={() => command("open_settings")}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></svg>
         </button>

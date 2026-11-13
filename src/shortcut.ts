@@ -7,6 +7,3 @@ export function captureShortcut(event: { code: string; altKey: boolean; ctrlKey:
 export function displayShortcut(value: string): string {
   return value.split("+").map(key => ({ alt: "⌥", control: "⌃", shift: "⇧", super: "⌘", Space: "␣", Enter: "↩", Tab: "⇥", Backspace: "⌫", Delete: "⌦", ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Home: "↖", End: "↘", PageUp: "⇞", PageDown: "⇟", Comma: ",", Period: ".", Slash: "/", Semicolon: ";", Quote: "'", BracketLeft: "[", BracketRight: "]", Backslash: "\\", Minus: "−", Equal: "=", Backquote: "`" } as Record<string, string>)[key] ?? key.replace(/^(Key|Digit)/, "")).join("");
 }
-export function shouldHideOnEscape(event: { key: string; isComposing: boolean; keyCode: number }, confirming: boolean, choosing: boolean, capturing: boolean): boolean {
-  return event.key === "Escape" && !event.isComposing && event.keyCode !== 229 && !confirming && !choosing && !capturing;
-}
