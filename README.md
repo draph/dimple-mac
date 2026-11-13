@@ -40,7 +40,7 @@ The app does not elevate privileges. Each target must be a writable folder; syst
 2. Choose a built-in badge, import a PNG/SVG, or enter text. The preview updates in the target card at the top; batch targets share the new look, and adjustments are optional.
 3. Click **Apply**. If existing custom icons would be overwritten, review the affected targets and confirm.
 
-When Finder is not the active app, use manual selection. Manually selected targets remain when you reopen the panel; **Use Finder Selection** explicitly replaces them. The target summary and expandable list show what will be changed, and individual folders can be removed before applying.
+When Finder is not the active app, use manual selection. Manually selected targets remain when you reopen the panel; open the arrow menu next to **Choose folders** and select **Use folders selected in Finder** to explicitly replace them. The menu supports keyboard navigation; click outside it or press **Esc** to close it. The target summary and expandable list show what will be changed, and individual folders can be removed before applying. With multiple targets, expand the list and choose **Remove all** to clear the targets while keeping the current badge and adjustments.
 
 Finder selection is read automatically only when a hidden panel opens without manual targets or an unfinished operation. Failed automatic reads clear old automatic targets, so an old selection cannot be applied accidentally. Invalid dropped or selected items are reported individually. Entirely invalid input, more than 100 valid folders, mixed folders and badges, or multiple badges preserve the previous targets and badge.
 

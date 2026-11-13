@@ -11,15 +11,19 @@
   --muted: #666666;
   --accent: #1765af;
   --primary-text: white;
+  --button-hover: #0000000a;
+  --button-active: #00000014;
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { margin: 0; }
 button, summary { cursor: pointer; }
-button { border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font: inherit; font-size: 12px; background: var(--surface); color: inherit; }
+button { border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font: inherit; font-size: 12px; background: var(--surface); color: inherit; transition: box-shadow 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 button:disabled { cursor: default; opacity: .55; }
-button:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-button:not(:disabled):hover { border-color: var(--accent); }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Tint the existing fill to preserve selected colors and gradients. */
+button:not(:disabled):not(.theme-swatch):hover { box-shadow: inset 0 0 0 100px var(--button-hover); }
+button:not(:disabled):not(.theme-swatch):active { box-shadow: inset 0 0 0 100px var(--button-active); }
 h1, h2, p { margin: 0; }
 h1 { font-size: 16px; font-weight: 650; }
 h2 { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
@@ -33,6 +37,7 @@ summary { font-size: 12px; color: var(--accent); padding: 3px 0; }
 .target-actions { justify-content: flex-start; flex-wrap: wrap; }
 .quiet { background: transparent; border-color: transparent; padding: 6px; }
 .target-list { list-style: none; padding: 0; margin: 8px 0; overflow: auto; }
+.target-list-actions { display: flex; justify-content: flex-end; }
 .target-list li { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
 .target-list li > div { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .path { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; margin-top: 3px; }
@@ -54,7 +59,7 @@ summary { font-size: 12px; color: var(--accent); padding: 3px 0; }
 .muted { font-size: 11px; line-height: 1.5; color: var(--muted); }
 .error { color: #b4232c; font-size: 12px; line-height: 1.6; margin-top: 8px; }
 .primary { background: var(--accent); border-color: var(--accent); color: var(--primary-text); padding: 9px 24px; flex-shrink: 0; }
-:root[data-theme="dark"] { color-scheme: dark; color: #f2f2f2; background: #181818; --surface: #242424; --border: #444444; --muted: #b3b3b3; --accent: #87c4ff; --primary-text: #181818; }
+:root[data-theme="dark"] { color-scheme: dark; color: #f2f2f2; background: #181818; --surface: #242424; --border: #444444; --muted: #b3b3b3; --accent: #87c4ff; --primary-text: #181818; --button-hover: #ffffff0f; --button-active: #ffffff1a; }
 :root[data-theme="dark"] .error { color: #ffabb0; }
 :root[data-theme="dark"] .badge-choice img { filter: invert(1); }
 dialog { margin: auto; max-width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; border: 1px solid var(--border); border-radius: 16px; padding: 20px; color: inherit; background: var(--surface); backdrop-filter: blur(24px); font-size: 13px; }
@@ -100,6 +105,10 @@ dialog p { margin-bottom: 8px; }
 .target .empty { padding: 0 0 4px; }
 .target-actions { gap: 6px; margin-top: 8px; }
 .target-actions button { padding: 6px; }
+.folder-selection-trigger { display: grid; place-items: center; }
+.folder-selection-options { position: fixed; z-index: 20; max-width: calc(100vw - 16px); padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 5px 18px #0002; }
+.folder-selection-options button { width: 100%; text-align: left; border-color: transparent; }
+.folder-selection-options button:focus-visible { outline: none; box-shadow: inset 0 0 0 100px var(--button-hover); }
 .target-list { max-height: 160px; }
 .target h2 { margin-bottom: 4px; }
 .editor-scroll > .badge-section { flex: 1 0 auto; display: flex; flex-direction: column; }
@@ -118,7 +127,6 @@ dialog p { margin-bottom: 8px; }
 .icon-grid { flex: 1 1 0; min-height: 66px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 58px; align-content: start; gap: 6px; padding: 4px; }
 .icon-grid .badge-choice { border-color: transparent; background: transparent; padding: 5px 2px; font-size: 11px; line-height: 1.2; }
 .icon-grid .badge-choice[aria-pressed="true"] { background: var(--surface); border-color: var(--accent); }
-.icon-grid .badge-choice:not(:disabled):hover { background: var(--surface); border-color: var(--border); }
 .adjustments-tool { flex: none; }
 .adjustments-trigger { display: flex; align-items: center; gap: 5px; padding: 6px 8px; }
 .adjustments-trigger[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
@@ -153,6 +161,7 @@ dialog p { margin-bottom: 8px; }
 .settings-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); }
 .settings-label { display: block; font-weight: 600; margin-bottom: 4px; }
 .settings-toggle .muted { display: block; }
+.shortcut-description { padding-top: 14px; }
 .settings-toggle input { appearance: none; flex: none; position: relative; width: 38px; height: 22px; margin: 0; border: 1px solid var(--border); border-radius: 20px; background: var(--border); cursor: pointer; }
 .settings-toggle input::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: white; border-radius: 50%; box-shadow: 0 1px 3px #0003; }
 .settings-toggle input:checked { background: #1688f8; border-color: #1688f8; }
@@ -187,6 +196,9 @@ dialog p { margin-bottom: 8px; }
 :root[data-theme="dark"] .appearance-options input:checked + span { color: #181818; }
 .appearance-options input:focus-visible { outline: none; }
 .appearance-options input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
 @media (max-width: 400px) {
   .panel { padding-right: 12px; padding-left: 12px; }
   .badge-tabs button { padding-inline: 10px; }

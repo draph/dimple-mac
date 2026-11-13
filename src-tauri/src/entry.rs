@@ -557,7 +557,17 @@ pub fn remove_target<R: tauri::Runtime>(
     commit_update(&app, state);
 }
 fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
-    if s.revision != expected_revision || index >= s.items.len() {
+    remove_targets(s, expected_revision, Some(index));
+}
+#[tauri::command]
+pub fn clear_targets<R: tauri::Runtime>(app: tauri::AppHandle<R>, expected_revision: u64) {
+    let inbox = app.state::<Inbox>();
+    let mut state = inbox.0.lock().unwrap();
+    remove_targets(&mut state, expected_revision, None);
+    commit_update(&app, state);
+}
+fn remove_targets(s: &mut Snapshot, expected_revision: u64, index: Option<usize>) {
+    if s.revision != expected_revision || index.is_some_and(|index| index >= s.items.len()) {
         s.error = Some("changed".into());
         return;
     }
@@ -573,7 +583,11 @@ fn remove(s: &mut Snapshot, expected_revision: u64, index: usize) {
     }
     s.request += 1;
     invalidate_read(s);
-    s.items.remove(index);
+    if let Some(index) = index {
+        s.items.remove(index);
+    } else {
+        s.items.clear();
+    }
     edited(s);
     s.issues.clear();
     s.source = if s.items.is_empty() { "" } else { "manual" }.into();
@@ -3283,6 +3297,107 @@ mod tests {
         super::complete_read(&mut s, 1, 0, true, Ok(targets().items));
         assert_eq!(s.items.len(), 2);
         assert_eq!(s.source, "manual");
+    }
+    #[test]
+    fn clearing_targets_preserves_badge_and_params_and_discards_finished_results() {
+        let mut s = successful_state();
+        s.params = serde_json::from_value(serde_json::json!({
+            "scale": 1.5, "offsetX": 10.0, "offsetY": -5.0, "theme": "#65BDF3"
+        }))
+        .unwrap();
+        s.badge.text = Some("Custom badge".into());
+        s.issues = targets().items;
+        s.error = Some("changed".into());
+        let badge = serde_json::to_value(&s.badge).unwrap();
+        let params = serde_json::to_value(&s.params).unwrap();
+        let revision = s.edit_revision;
+        let request = s.request;
+        super::remove_targets(&mut s, 7, None);
+        assert!(s.items.is_empty());
+        assert!(s.source.is_empty());
+        assert!(s.issues.is_empty());
+        assert!(s.error.is_none());
+        assert!(s.operation.is_none());
+        assert!(s.retained.is_none());
+        assert!(s.cleanup.is_none());
+        assert_eq!(s.edit_revision, revision + 1);
+        assert_eq!(s.request, request + 1);
+        assert_eq!(serde_json::to_value(&s.badge).unwrap(), badge);
+        assert_eq!(serde_json::to_value(&s.params).unwrap(), params);
+        super::complete_read(&mut s, 1, request, true, Ok(targets().items));
+        assert!(s.items.is_empty());
+    }
+    #[test]
+    fn clearing_targets_rejects_stale_revisions_and_busy_states() {
+        for case in 0..10 {
+            let mut s = targets();
+            match case {
+                1 => s.choosing = true,
+                2 => s.checking = true,
+                3 => s.importing = true,
+                4 => s.active_read = Some(1),
+                5 => s.preparing = true,
+                6 => {
+                    let request = crate::operation::parse(
+                        r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
+                    )
+                    .unwrap();
+                    s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
+                        request,
+                        vec![],
+                    )));
+                }
+                7..=9 => {
+                    let mut progress = completed_operation();
+                    progress.phase = ["checking", "running", "uncertain"][case - 7].into();
+                    s.operation = Some(progress);
+                }
+                _ => {}
+            }
+            let before = serde_json::to_value(&s.items).unwrap();
+            let revision = s.edit_revision;
+            let request = s.request;
+            super::remove_targets(&mut s, if case == 0 { 6 } else { 7 }, None);
+            assert_eq!(serde_json::to_value(&s.items).unwrap(), before);
+            assert_eq!(s.source, "finder-auto");
+            assert_eq!(s.edit_revision, revision);
+            assert_eq!(s.request, request);
+            assert_eq!(
+                s.error.unwrap().params["reason"],
+                if case == 0 { "changed" } else { "busy" }
+            );
+        }
+    }
+    #[test]
+    fn clear_targets_ipc_checks_revision_and_publishes_one_atomic_update() {
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(targets())))
+            .invoke_handler(tauri::generate_handler![super::clear_targets])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        for revision in [6, 8] {
+            tauri::test::get_ipc_response(
+                &window,
+                tauri::webview::InvokeRequest {
+                    cmd: "clear_targets".into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "tauri://localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(
+                        serde_json::json!({"expectedRevision": revision}),
+                    ),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.into(),
+                },
+            )
+            .unwrap();
+            let state = super::get_entry(app.handle().clone());
+            assert_eq!(state.revision, if revision == 6 { 8 } else { 9 });
+            assert_eq!(state.items.len(), if revision == 6 { 3 } else { 0 });
+        }
     }
     fn imported_mask() -> crate::assets::Mask {
         crate::assets::load(

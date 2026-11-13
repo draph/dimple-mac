@@ -14,6 +14,7 @@ import type { PreparedOperation, PrepareOperation, RenderParams } from "./contra
 import { TextBadge } from "./TextBadge";
 import { Adjustments } from "./Adjustments";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { FolderSelectionMenu } from "./FolderSelectionMenu";
 import { defaultParams } from "./renderParams";
 import type { AppearanceController } from "./appearance";
 import { acceptLanguage, type LanguagePreference, type LanguageStatus } from "./language";
@@ -235,7 +236,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </> : <p className="empty">{t("entry.empty")}</p>}
         <div className="target-actions">
           <button disabled={busy || paramsPending} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
-          <button className="quiet" disabled={busy || paramsPending} onClick={() => command("finder_selection")}>{t("entry.finderShort")}</button>
+          <FolderSelectionMenu locale={locale} disabled={busy || paramsPending || showSettings} onSelect={() => command("finder_selection")} />
         </div>
         </div>
         </div>
@@ -243,6 +244,8 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {!!entry?.items.length && <>
           <details>
             <summary>{t("entry.details")}</summary>
+            {entry.items.length > 1 && <div className="target-list-actions"><button className="quiet" disabled={busy || paramsPending}
+              onClick={() => command("clear_targets", { expectedRevision: entry.revision })}>{t("entry.removeAll")}</button></div>}
             <ul className="target-list">{entry.items.map((item) => <li key={item.id}>
               <div><strong>{name(item.path)}</strong><p className="path">{item.path}</p>{item.linked && <><p className="path">{translate(locale, "entry.actualPath", { path: item.actualPath })}</p><p>{t("entry.linkConfirmation")}</p></>}</div>
               <button className="quiet" disabled={busy || paramsPending} aria-label={translate(locale, "entry.removeName", { name: name(item.path) })}

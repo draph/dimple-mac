@@ -191,6 +191,7 @@ pub fn run() {
             entry::get_badge_mask,
             entry::finder_selection,
             entry::remove_target,
+            entry::clear_targets,
             entry::prepare_operation,
             entry::prepare_recovery,
             entry::stop_operation,

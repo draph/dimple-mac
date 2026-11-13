@@ -96,6 +96,7 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, appea
       <span className="settings-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="3" /><path d="M6 8h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M8 16h8" /></svg></span>
       <h2 id="shortcut-title" className="settings-card-title">{t("settings.section")}</h2>
     </div>
+    <p className="muted shortcut-description">{t("settings.description")}</p>
     <div className="settings-toggle"><span><span className="settings-label">{t("settings.enabled")}</span><span className="muted">{t("settings.enabledDescription")}</span></span><input role="switch" aria-label={t("settings.enabled")} type="checkbox" checked={draft.enabled} disabled={saving || capturing} onChange={e => { setDraft({ ...draft, enabled: e.target.checked }); setSaved(false); }} /></div>
     <div className="shortcut-row">
     <label htmlFor="shortcut-input">{t("settings.shortcut")}</label>
