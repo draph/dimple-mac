@@ -7,6 +7,7 @@ import "./App.css";
 import { icons, categories, searchIcons } from "./icons";
 
 const thumbnails = import.meta.glob<string>("./assets/*.svg", { query: "?url", import: "default", eager: true });
+const badgeTabs = ["icon", "text", "image"] as const;
 
 import { acceptSession, sameContext, sameDraft, settingsBlocked } from "./session";
 import type { PreparedOperation, PrepareOperation, RenderParams } from "./contracts";
@@ -41,7 +42,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const [imported, setImported] = useState<{ id: string; url: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsButton = useRef<HTMLButtonElement>(null);
-  const [badgeTab, setBadgeTab] = useState("icon");
+  const [badgeTab, setBadgeTab] = useState<(typeof badgeTabs)[number]>("icon");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const onPreviewReady = useCallback((id: string, ready: boolean) => setReadyBadgeId(ready ? id : null), []);
@@ -66,6 +67,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const entry = session?.entry;
   const badgeId = entry?.badge.id ?? "code";
   const badgeSource = imported?.id === badgeId ? imported.url : null;
+  const imageBadge = !!entry && entry.badge.text == null && !icons.some(icon => icon.id === badgeId);
   const renderParams = localParams ?? entry?.params ?? defaultParams;
   const previewReady = !paramsPending && readyBadgeId === JSON.stringify([badgeId, renderParams]) && !!badgeSource && !entry?.badgeError && !entry?.importing && !textQueued;
   useEffect(() => {
@@ -254,15 +256,14 @@ export default function App({ appearance }: { appearance: AppearanceController }
         <div className="badge-toolbar">
         <h2 id="badge-heading" className="sr-only">{t("badge.heading")}</h2>
         <div className="badge-tabs" role="tablist" aria-label={t("badge.heading")}>
-          {["icon", "text"].map(tab => <button key={tab} id={`badge-tab-${tab}`} role="tab" aria-selected={badgeTab === tab} aria-controls={`badge-panel-${tab}`} tabIndex={badgeTab === tab ? 0 : -1}
+          {badgeTabs.map((tab, index) => <button key={tab} id={`badge-tab-${tab}`} role="tab" aria-selected={badgeTab === tab} aria-controls={`badge-panel-${tab}`} tabIndex={badgeTab === tab ? 0 : -1}
             onClick={() => setBadgeTab(tab)} onKeyDown={event => {
               if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
               event.preventDefault();
-              const next = event.key === "Home" ? "icon" : event.key === "End" ? "text" : badgeTab === "icon" ? "text" : "icon";
+              const next = badgeTabs[event.key === "Home" ? 0 : event.key === "End" ? badgeTabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + badgeTabs.length) % badgeTabs.length];
               setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
             }}>{t(`badge.tab.${tab}`)}</button>)}
         </div>
-        <button className="quiet import-button" hidden={badgeTab !== "icon"} disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t("badge.import")}</button>
         </div>
         <div id="badge-panel-icon" role="tabpanel" aria-labelledby="badge-tab-icon" hidden={badgeTab !== "icon"}>
         <div className="icon-filters">
@@ -283,8 +284,20 @@ export default function App({ appearance }: { appearance: AppearanceController }
         <div id="badge-panel-text" role="tabpanel" aria-labelledby="badge-tab-text" hidden={badgeTab !== "text"}>
         {session && <TextBadge locale={locale} session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
         </div>
+        <div id="badge-panel-image" className="image-badge" role="tabpanel" aria-labelledby="badge-tab-image" hidden={badgeTab !== "image"}>
+          <div className="image-import">
+            {imageBadge && badgeSource && <img className="image-thumbnail" src={badgeSource} alt={t("badge.imported")} />}
+            <button aria-describedby="badge-image-hint" disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t(imageBadge ? "badge.replace" : "badge.import")}</button>
+          </div>
+          <p id="badge-image-hint" className="muted">{t("badge.importHint")}</p>
+          <fieldset className="badge-effects" disabled={!imageBadge || busy || textQueued || paramsPending || entry?.importing}>
+            <legend>{t("badge.effect")}</legend>
+            <label><input type="radio" name="badge-effect" value="engraved" checked readOnly />{t("badge.effect.engraved")}</label>
+            <label><input type="radio" name="badge-effect" value="original" disabled />{t("badge.effect.originalSoon")}</label>
+          </fieldset>
+        </div>
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
-        {!icons.some(icon => icon.id === badgeId) && entry?.badge.text == null && <p className="muted">{t("badge.imported")}</p>}
+        {imageBadge && <p className="muted">{t("badge.imported")}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
         {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}

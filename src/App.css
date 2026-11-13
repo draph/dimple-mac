@@ -106,7 +106,12 @@ dialog p { margin-bottom: 8px; }
 .badge-tabs { margin: 0; gap: 0; padding: 2px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border); }
 .badge-tabs button { border: 0; border-radius: 6px; background: transparent; padding: 5px 14px; }
 .badge-tabs [aria-selected="true"] { background: var(--accent); color: #fff; }
-.import-button { font-size: 11px; }
+.image-badge { display: grid; gap: 8px; }
+.image-import { display: flex; align-items: center; gap: 10px; }
+.image-thumbnail { width: 48px; height: 48px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: #808080; }
+.badge-effects { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 12px; }
+.badge-effects label { display: inline-flex; align-items: center; gap: 5px; }
+.badge-effects label:has(input:disabled) { color: var(--muted); }
 .icon-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 58px; max-height: 130px; gap: 6px; padding: 4px; }
 .icon-grid .badge-choice { border-color: transparent; background: transparent; padding: 5px 2px; font-size: 11px; line-height: 1.2; }
 .icon-grid .badge-choice[aria-pressed="true"] { background: var(--surface); border-color: var(--accent); }
