@@ -1631,6 +1631,7 @@ pub fn hide_if_allowed<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         && let Some(w) = app.get_webview_window("main")
         && w.hide().is_ok()
     {
+        crate::panel::cancel_startup_show(app);
         let _ = app.emit("panel-visibility", false);
     }
 }
@@ -1644,6 +1645,7 @@ mod tests {
     #[test]
     fn settings_native_and_ipc_entries_recheck_operations_and_do_not_queue_opening() {
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox::default())
             .manage(crate::settings::Settings::default())
             .invoke_handler(tauri::generate_handler![crate::settings::open_settings])
@@ -1804,6 +1806,7 @@ mod tests {
         use serde_json::json;
         use tauri::Manager;
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox::default())
             .invoke_handler(tauri::generate_handler![
                 super::set_render_params,
@@ -1899,6 +1902,7 @@ mod tests {
         let state = successful_state();
         let token = state.cleanup.clone().unwrap();
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
@@ -1922,6 +1926,7 @@ mod tests {
         let state = successful_state();
         let token = state.cleanup.clone().unwrap();
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
@@ -2038,6 +2043,7 @@ mod tests {
             ..Default::default()
         };
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
@@ -2223,6 +2229,7 @@ mod tests {
             super::check_paths(vec![temp.0.clone()]).unwrap(),
         );
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(crate::language::Language::for_test(
                 crate::localization::Locale::En,
             ))
@@ -2562,6 +2569,7 @@ mod tests {
         let p = crate::operation::Prepared::build(input, selected, images).unwrap();
         state.preparing = false;
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
@@ -3101,6 +3109,7 @@ mod tests {
             .collect();
         let badge = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/assets/code.svg");
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox::default())
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
@@ -3396,6 +3405,7 @@ mod tests {
         ));
         let id = state.badge.id.clone();
         let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
             .manage(super::Inbox(std::sync::Mutex::new(state)))
             .manage(crate::language::Language::for_test(
                 crate::localization::Locale::En,

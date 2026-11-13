@@ -21,6 +21,8 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const current = useRef<Session | null>(null);
   const epoch = useRef(0);
   const [language, setLanguage] = useState<LanguageStatus | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [languageLoaded, setLanguageLoaded] = useState(false);
   const languageRef = useRef<LanguageStatus | null>(null);
   const applyLanguage = useCallback((value: LanguageStatus) => {
     const accepted = acceptLanguage(languageRef.current, value);
@@ -88,11 +90,13 @@ export default function App({ appearance }: { appearance: AppearanceController }
       const before = current.current;
       return refreshSession(generation).catch((error: unknown) => {
         if (generation === epoch.current && current.current === before) setFailure({ error });
+      }).finally(() => {
+        if (generation === epoch.current) setSessionLoaded(true);
       });
     };
     const listener = listen("entry-changed", refresh);
     void listener.then(refresh).catch((error: unknown) => {
-      if (generation === epoch.current) setFailure({ error });
+      if (generation === epoch.current) { setFailure({ error }); setSessionLoaded(true); }
     });
     return () => { ++epoch.current; void listener.then(unlisten => unlisten()).catch(() => {}); };
   }, [refreshSession]);
@@ -108,9 +112,16 @@ export default function App({ appearance }: { appearance: AppearanceController }
       });
     }).catch((error: unknown) => {
       if (active) setFailure({ error });
+    }).finally(() => {
+      if (active) setLanguageLoaded(true);
     });
     return () => { active = false; void listener.then(unlisten => unlisten()).catch(() => {}); };
   }, [applyLanguage]);
+  useEffect(() => {
+    if (sessionLoaded && languageLoaded) {
+      void invoke("panel_ready").catch(error => setFailure({ error }));
+    }
+  }, [sessionLoaded, languageLoaded]);
   const selectLanguage = useCallback(async (preference: LanguagePreference) => {
     applyLanguage(await invoke<LanguageStatus>("set_language", { preference }));
   }, [applyLanguage]);

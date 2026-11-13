@@ -1,5 +1,48 @@
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager};
 
+#[derive(Default)]
+pub struct Startup(std::sync::Mutex<StartupState>);
+
+#[derive(Default)]
+struct StartupState {
+    ready: bool,
+    pending: Option<Option<(f64, f64)>>,
+}
+
+impl StartupState {
+    fn request(&mut self, anchor: Option<(f64, f64)>) -> bool {
+        if self.ready {
+            return true;
+        }
+        self.pending = Some(anchor);
+        false
+    }
+
+    fn complete(&mut self) -> Option<Option<(f64, f64)>> {
+        self.ready = true;
+        self.pending.take()
+    }
+
+    fn cancel(&mut self) {
+        self.pending = None;
+    }
+}
+
+pub fn cancel_startup_show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    app.state::<Startup>().0.lock().unwrap().cancel();
+}
+
+#[tauri::command]
+pub fn panel_ready<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    let on_main = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let pending = on_main.state::<Startup>().0.lock().unwrap().complete();
+        if let Some(anchor) = pending {
+            show_window(&on_main, anchor);
+        }
+    });
+}
+
 pub fn hide<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let on_main = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -55,15 +98,21 @@ fn contains(frame: &Frame, point: (f64, f64)) -> bool {
 pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>, anchor: Option<(f64, f64)>) {
     let on_main = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let Some(w) = on_main.get_webview_window("main") else {
+        if !on_main.state::<Startup>().0.lock().unwrap().request(anchor) {
             return;
-        };
-        place(&w, anchor);
-        if w.show().is_ok() {
-            let _ = on_main.emit("panel-visibility", true);
         }
-        let _ = w.set_focus();
+        show_window(&on_main, anchor);
     });
+}
+fn show_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>, anchor: Option<(f64, f64)>) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    place(&w, anchor);
+    if w.show().is_ok() {
+        let _ = app.emit("panel-visibility", true);
+    }
+    let _ = w.set_focus();
 }
 fn place<R: tauri::Runtime>(w: &tauri::WebviewWindow<R>, anchor: Option<(f64, f64)>) -> Option<()> {
     use objc2_app_kit::{NSEvent, NSScreen};
@@ -171,6 +220,40 @@ pub fn tray_anchor(app: &tauri::AppHandle) -> Option<(f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn startup_defers_show_until_ready_and_keeps_the_latest_anchor() {
+        let mut state = StartupState::default();
+        assert!(!state.request(None));
+        assert!(!state.request(Some((10.0, 20.0))));
+        assert_eq!(state.complete(), Some(Some((10.0, 20.0))));
+        assert_eq!(state.complete(), None);
+        assert!(state.request(None));
+        assert!(state.request(Some((30.0, 40.0))));
+    }
+
+    #[test]
+    fn startup_readiness_only_replays_a_requested_show() {
+        let mut state = StartupState::default();
+        assert_eq!(state.complete(), None);
+        let mut state = StartupState::default();
+        assert!(!state.request(None));
+        assert_eq!(state.complete(), Some(None));
+    }
+
+    #[test]
+    fn startup_hide_cancels_pending_show_but_allows_a_new_request() {
+        let mut state = StartupState::default();
+        assert!(!state.request(None));
+        state.cancel();
+        assert_eq!(state.complete(), None);
+
+        let mut state = StartupState::default();
+        assert!(!state.request(None));
+        state.cancel();
+        assert!(!state.request(Some((10.0, 20.0))));
+        assert_eq!(state.complete(), Some(Some((10.0, 20.0))));
+    }
+
     #[test]
     fn native_and_tauri_sources_agree_across_mixed_scales() {
         let expected = Frame {

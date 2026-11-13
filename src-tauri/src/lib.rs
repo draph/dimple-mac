@@ -100,6 +100,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(entry::Inbox::default())
         .manage(TrayWake::default())
+        .manage(panel::Startup::default())
         .manage(settings::Settings::default())
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "hide-panel" {
@@ -182,6 +183,7 @@ pub fn run() {
             entry::begin_edit,
             entry::set_render_params,
             panel_visible,
+            panel::panel_ready,
             entry::choose_targets,
             entry::choose_badge,
             entry::select_badge,
