@@ -16,6 +16,7 @@ import { Adjustments } from "./Adjustments";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { FolderSelectionMenu } from "./FolderSelectionMenu";
 import { defaultParams } from "./renderParams";
+import { operationSummary } from "./operationSummary";
 import type { AppearanceController } from "./appearance";
 import { acceptLanguage, type LanguagePreference, type LanguageStatus } from "./language";
 export default function App({ appearance }: { appearance: AppearanceController }) {
@@ -313,14 +314,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
       {(failure || progress || (prepared && !prepared.confirmationToken)) && <div className="operation-feedback">
       {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
       {progress && <section className="card" aria-live="polite" aria-atomic="true">
-        <p>{translate(locale, progress.phase === "completed" ? "operation.result" : "operation.progress", {
-          completed: progress.items.filter(item => item.status === "succeeded" || item.status === "failed").length,
-          total: progress.items.length,
-          succeeded: progress.items.filter(item => item.status === "succeeded").length,
-          failed: progress.items.filter(item => item.status === "failed").length,
-          pending: progress.items.filter(item => item.status === "pending").length,
-          unknown: progress.items.filter(item => item.status === "unknown").length,
-        })}</p>
+        <p>{operationSummary(locale, progress)}</p>
         {progress.phase === "checking" && <p>{t("operation.checking")}</p>}
         {progress.slow && <p>{t("operation.slow")}</p>}
         {progress.items.some(item => item.status === "unknown") && <p role="alert">{t(progress.phase === "running" ? "operation.waiting" : "operation.uncertain")}</p>}
@@ -343,15 +337,15 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </>}
       </footer>
       </div>
-      <dialog ref={dialog} aria-labelledby="confirm-title" aria-describedby="confirm-warning" onCancel={event => { event.preventDefault(); void confirm(true); }}>
+      <dialog ref={dialog} aria-labelledby="confirm-title" aria-describedby="confirm-warning confirm-count" onCancel={event => { event.preventDefault(); void confirm(true); }}>
         <h2 id="confirm-title">{t(prepared?.restore ? "operation.confirmRestore" : "operation.confirmApply")}</h2>
-        <p id="confirm-warning">{t(prepared?.restore ? "operation.restoreWarning" : "operation.overwriteWarning")}</p>
-        <p>{translate(locale, "operation.confirmCount", { total: prepared?.targetIds.length ?? 0, overwrite: prepared?.overwriteTargetIds.length ?? 0, linked: prepared?.linkedTargetIds.length ?? 0 })}</p>
+        <div id="confirm-warning">{(prepared?.restore || !!prepared?.overwriteTargetIds.length) && <p>{t(prepared?.restore ? "operation.restoreWarning" : "operation.overwriteWarning")}</p>}</div>
+        <p id="confirm-count">{translate(locale, "operation.confirmCount", { total: prepared?.targetIds.length ?? 0 })}</p>
         <ul className="confirmation-targets">{prepared?.targetIds.map(id => {
           const target = entry?.items.find(item => item.id === id);
           return <li key={id}><p className="path">{target?.path}</p>
-            {prepared.overwriteTargetIds.includes(id) && <p>{t("operation.overwrite")}</p>}
-            {target?.linked && <p className="path">{translate(locale, "entry.actualPath", { path: target.actualPath })}</p>}
+            {!prepared.restore && prepared.overwriteTargetIds.includes(id) && <p>{t("operation.overwrite")}</p>}
+            {target && target.path !== target.actualPath && <p className="path">{translate(locale, "operation.actualPath", { path: target.actualPath })}</p>}
           </li>;
         })}</ul>
         {failure && <p role="alert" className="error">{errorMessage(locale, failure.error)}</p>}
