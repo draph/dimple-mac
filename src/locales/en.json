@@ -182,6 +182,7 @@
   "text.error.missing": "A glyph is unavailable in the system fonts. Try different text.",
   "text.error.render": "This text could not be rendered completely. Try different text.",
   "text.error.timeout": "Text rendering timed out. Try again or use another badge.",
+  "adjust.close": "Close adjustments",
   "adjust.heading": "Adjustments",
   "adjust.scale": "Scale",
   "adjust.offsetX": "Horizontal offset",

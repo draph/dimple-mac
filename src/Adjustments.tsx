@@ -1,14 +1,74 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Locale, type Session } from "./i18n";
 import type { RenderParams } from "./contracts";
 import { defaultParams, themes, validParams } from "./renderParams";
 import { sameContext } from "./session";
 
-export function Adjustments({ locale, session, disabled, refresh, onChange }: {
+export function Adjustments({ locale, session, disabled, refresh, onChange, open, onOpenChange }: {
   locale: Locale; session: Session; disabled: boolean; refresh: () => Promise<Session | null>;
+  open: boolean; onOpenChange: (open: boolean) => void;
   onChange: (params: RenderParams | null, pending: boolean) => void;
 }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef(false);
+  const close = (restoreFocus = false) => {
+    returnFocus.current = restoreFocus;
+    onOpenChange(false);
+  };
+  useLayoutEffect(() => {
+    if (!open) {
+      if (returnFocus.current) { returnFocus.current = false; trigger.current?.focus(); }
+      return;
+    }
+    const button = trigger.current!, content = panel.current!;
+    const editor = button.closest<HTMLElement>(".editor")!;
+    const scroll = editor.querySelector<HTMLElement>(".editor-scroll")!;
+    const overview = editor.querySelector<HTMLElement>(".target-overview")!;
+    const toolbar = button.closest<HTMLElement>(".badge-toolbar")!;
+    let lockedTop = scroll.scrollTop;
+    const position = () => {
+      const bounds = scroll.getBoundingClientRect();
+      const preview = overview.getBoundingClientRect(), row = toolbar.getBoundingClientRect();
+      if (preview.top < bounds.top || row.bottom > bounds.bottom) {
+        scroll.scrollTop += preview.top - bounds.top;
+      }
+      lockedTop = scroll.scrollTop;
+      const anchor = button.getBoundingClientRect();
+      content.style.top = `${anchor.bottom + 6}px`;
+      content.style.right = `${window.innerWidth - anchor.right}px`;
+      content.style.width = `${Math.min(320, bounds.width - 6)}px`;
+      content.style.maxHeight = `${Math.max(0, bounds.bottom - anchor.bottom - 10)}px`;
+    };
+    position();
+    content.focus({ preventScroll: true });
+    const lockScroll = () => { scroll.scrollTop = lockedTop; };
+    const outside = (event: MouseEvent) => {
+      if (!content.contains(event.target as Node) && !button.contains(event.target as Node)) close();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); close(true); }
+    };
+    const wheel = (event: WheelEvent) => {
+      if (!content.contains(event.target as Node)) event.preventDefault();
+    };
+    const observer = new ResizeObserver(position);
+    observer.observe(scroll); observer.observe(toolbar); observer.observe(overview);
+    scroll.addEventListener("scroll", lockScroll);
+    document.addEventListener("click", outside);
+    document.addEventListener("keydown", escape);
+    document.addEventListener("wheel", wheel, { passive: false });
+    window.addEventListener("resize", position);
+    return () => {
+      observer.disconnect();
+      scroll.removeEventListener("scroll", lockScroll);
+      document.removeEventListener("click", outside);
+      document.removeEventListener("keydown", escape);
+      document.removeEventListener("wheel", wheel);
+      window.removeEventListener("resize", position);
+    };
+  }, [open, onOpenChange]);
   const [params, setParams] = useState(session.entry.params);
   const [color, setColor] = useState(session.entry.params.theme === "native" ? "#808080" : session.entry.params.theme);
   const [error, setError] = useState<unknown>(null);
@@ -60,7 +120,12 @@ export function Adjustments({ locale, session, disabled, refresh, onChange }: {
     if (!sending.current) { value.current = session.entry.params; setParams(session.entry.params); if (!invalidRef.current) setColor(session.entry.params.theme === "native" ? "#808080" : session.entry.params.theme); }
   }, [session.entry.params]);
   const t = (key: string) => translate(locale, key);
-  return <details className="adjustments"><summary>{t("adjust.heading")}</summary>
+  return <div className="adjustments-tool">
+    <button ref={trigger} className="adjustments-trigger" aria-expanded={open} aria-controls="adjustments-panel" aria-haspopup="dialog" onClick={() => onOpenChange(!open)}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 3v6m0 4v8M12 3v12m0 4v2M20 3v2m0 4v12M1 9h6m2 6h6m2-10h6" /></svg>{t("adjust.heading")}
+    </button>
+    <div ref={panel} id="adjustments-panel" className="adjustments" role="dialog" aria-labelledby="adjustments-heading" tabIndex={-1} hidden={!open}>
+    <div className="adjustments-header"><h2 id="adjustments-heading">{t("adjust.heading")}</h2><button className="quiet" aria-label={t("adjust.close")} onClick={() => close(true)}>×</button></div>
     <fieldset disabled={disabled}>
       {([["scale", .25, 2, .01], ["offsetX", -100, 100, 1], ["offsetY", -100, 100, 1]] as const).map(([name, min, max, step]) =>
         <label className="adjustment-row" key={name}><span>{t(`adjust.${name}`)}</span>
@@ -70,7 +135,7 @@ export function Adjustments({ locale, session, disabled, refresh, onChange }: {
       <div className="theme-presets" role="group" aria-label={t("adjust.theme")}>
         {themes.map(([name, theme]) => <button key={name} className="theme-swatch" aria-label={t(`adjust.${name}`)} title={t(`adjust.${name}`)} style={{ backgroundColor: theme === "native" ? "#65BDF3" : theme }} aria-pressed={params.theme === theme} onClick={() => enqueue({ ...value.current, theme })}><span className="sr-only">{t(`adjust.${name}`)}</span></button>)}
       </div>
-      <label>{t("adjust.custom")} <input type="color" aria-label={t("adjust.picker")} value={/^#[\da-f]{6}$/i.test(color) ? color : "#808080"}
+      <label className="custom-color"><span>{t("adjust.custom")}</span> <input type="color" aria-label={t("adjust.picker")} value={/^#[\da-f]{6}$/i.test(color) ? color : "#808080"}
         onChange={event => enqueue({ ...value.current, theme: event.target.value.toUpperCase() })} />
         <input type="text" aria-label={t("adjust.hex")} value={color} aria-invalid={invalid} spellCheck={false}
           onChange={event => {
@@ -84,5 +149,6 @@ export function Adjustments({ locale, session, disabled, refresh, onChange }: {
       <button onClick={() => enqueue({ ...defaultParams })}>{t("adjust.reset")}</button>
     </fieldset>
     {error !== null && <p role="alert" className="error">{errorMessage(locale, error)}</p>}
-  </details>;
+    </div>
+  </div>;
 }

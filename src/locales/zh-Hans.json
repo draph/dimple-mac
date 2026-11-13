@@ -182,6 +182,7 @@
   "text.error.missing": "系统字体中缺少所需字形，请更换文字。",
   "text.error.render": "无法完整绘制此文字，请更换文字后重试。",
   "text.error.timeout": "文字绘制超时，请重试或使用其他徽标。",
+  "adjust.close": "关闭调整",
   "adjust.heading": "调整",
   "adjust.scale": "缩放",
   "adjust.offsetX": "水平偏移",

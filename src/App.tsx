@@ -41,6 +41,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const [readyBadgeId, setReadyBadgeId] = useState<string | null>(null);
   const [imported, setImported] = useState<{ id: string; url: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const [badgeTab, setBadgeTab] = useState<(typeof badgeTabs)[number]>("icon");
   const [query, setQuery] = useState("");
@@ -137,6 +138,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const busy = submitting || !!prepared || running || !entry || !session || entry.choosing || entry.reading || entry.checking || entry.preparing;
   const blockSettings = settingsBlocked(session, submitting);
   const showSettings = settingsOpen && !blockSettings;
+  useEffect(() => { if (showSettings) setAdjustmentsOpen(false); }, [showSettings]);
   const wasSettingsOpen = useRef(false);
   useEffect(() => {
     if (wasSettingsOpen.current && !showSettings) settingsButton.current?.focus();
@@ -217,7 +219,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </button>
       </header>
       <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} appearance={appearance} language={language} onSelectLanguage={selectLanguage} />
-      <div className="editor" hidden={showSettings}>
+      <div className={`editor${adjustmentsOpen ? " adjustments-open" : ""}`} hidden={showSettings}>
       <div className="editor-scroll">
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
         <div className="target-overview">
@@ -237,6 +239,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </div>
         </div>
         </div>
+        <div className="target-details">
         {!!entry?.items.length && <>
           <details>
             <summary>{t("entry.details")}</summary>
@@ -251,19 +254,21 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
         {entry?.error && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
         {!!entry?.issues.length && <ul aria-label={t("entry.invalidItems")}>{entry.issues.map((issue, index) => <li key={`${index}:${issue.path}`}><span className="path">{issue.path}</span><p role="alert">{errorMessage(locale, issue.error)}</p></li>)}</ul>}
+        </div>
       </section>
       <section className="badge-section" aria-labelledby="badge-heading">
         <div className="badge-toolbar">
         <h2 id="badge-heading" className="sr-only">{t("badge.heading")}</h2>
         <div className="badge-tabs" role="tablist" aria-label={t("badge.heading")}>
           {badgeTabs.map((tab, index) => <button key={tab} id={`badge-tab-${tab}`} role="tab" aria-selected={badgeTab === tab} aria-controls={`badge-panel-${tab}`} tabIndex={badgeTab === tab ? 0 : -1}
-            onClick={() => setBadgeTab(tab)} onKeyDown={event => {
+            onClick={() => { setAdjustmentsOpen(false); setBadgeTab(tab); }} onKeyDown={event => {
               if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
               event.preventDefault();
               const next = badgeTabs[event.key === "Home" ? 0 : event.key === "End" ? badgeTabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + badgeTabs.length) % badgeTabs.length];
-              setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
+              setAdjustmentsOpen(false); setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
             }}>{t(`badge.tab.${tab}`)}</button>)}
         </div>
+        {session && <Adjustments locale={locale} session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} open={adjustmentsOpen} onOpenChange={setAdjustmentsOpen} />}
         </div>
         <div id="badge-panel-icon" role="tabpanel" aria-labelledby="badge-tab-icon" hidden={badgeTab !== "icon"}>
         <div className="icon-filters">
@@ -301,9 +306,6 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
         {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
-      </section>
-      <section>
-        {session && <Adjustments locale={locale} session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} />}
       </section>
       </div>
       {(failure || progress || (prepared && !prepared.confirmationToken)) && <div className="operation-feedback">
