@@ -25,25 +25,21 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
     const button = trigger.current!, content = panel.current!;
     const editor = button.closest<HTMLElement>(".editor")!;
     const scroll = editor.querySelector<HTMLElement>(".editor-scroll")!;
-    const overview = editor.querySelector<HTMLElement>(".target-overview")!;
     const toolbar = button.closest<HTMLElement>(".badge-toolbar")!;
-    let lockedTop = scroll.scrollTop;
     const position = () => {
       const bounds = scroll.getBoundingClientRect();
-      const preview = overview.getBoundingClientRect(), row = toolbar.getBoundingClientRect();
-      if (preview.top < bounds.top || row.bottom > bounds.bottom) {
-        scroll.scrollTop += preview.top - bounds.top;
-      }
-      lockedTop = scroll.scrollTop;
       const anchor = button.getBoundingClientRect();
-      content.style.top = `${anchor.bottom + 6}px`;
+      const below = bounds.bottom - anchor.bottom - 10;
+      const above = anchor.top - bounds.top - 10;
+      const upward = below < content.scrollHeight && above > below;
+      content.style.top = upward ? "auto" : `${anchor.bottom + 6}px`;
+      content.style.bottom = upward ? `${window.innerHeight - anchor.top + 6}px` : "auto";
       content.style.right = `${window.innerWidth - anchor.right}px`;
       content.style.width = `${Math.min(320, bounds.width - 6)}px`;
-      content.style.maxHeight = `${Math.max(0, bounds.bottom - anchor.bottom - 10)}px`;
+      content.style.maxHeight = `${Math.max(0, upward ? above : below)}px`;
     };
     position();
     content.focus({ preventScroll: true });
-    const lockScroll = () => { scroll.scrollTop = lockedTop; };
     const outside = (event: MouseEvent) => {
       if (!content.contains(event.target as Node) && !button.contains(event.target as Node)) close();
     };
@@ -54,15 +50,15 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
       if (!content.contains(event.target as Node)) event.preventDefault();
     };
     const observer = new ResizeObserver(position);
-    observer.observe(scroll); observer.observe(toolbar); observer.observe(overview);
-    scroll.addEventListener("scroll", lockScroll);
+    observer.observe(scroll); observer.observe(toolbar);
+    scroll.addEventListener("scroll", position);
     document.addEventListener("click", outside);
     document.addEventListener("keydown", escape);
     document.addEventListener("wheel", wheel, { passive: false });
     window.addEventListener("resize", position);
     return () => {
       observer.disconnect();
-      scroll.removeEventListener("scroll", lockScroll);
+      scroll.removeEventListener("scroll", position);
       document.removeEventListener("click", outside);
       document.removeEventListener("keydown", escape);
       document.removeEventListener("wheel", wheel);

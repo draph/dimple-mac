@@ -119,12 +119,6 @@ dialog p { margin-bottom: 8px; }
 .icon-grid .badge-choice { border-color: transparent; background: transparent; padding: 5px 2px; font-size: 11px; line-height: 1.2; }
 .icon-grid .badge-choice[aria-pressed="true"] { background: var(--surface); border-color: var(--accent); }
 .icon-grid .badge-choice:not(:disabled):hover { background: var(--surface); border-color: var(--border); }
-/* Keep the preview and toolbar together while the floating controls are open. */
-.adjustments-open .target-details { max-height: 24px; overflow: auto; }
-.adjustments-open .target-actions { gap: 4px; }
-.adjustments-open .target-actions button { padding: 4px; font-size: 11px; white-space: nowrap; }
-.adjustments-open .editor-scroll { overflow-y: hidden; }
-.adjustments-open .operation-feedback { max-height: 48px; }
 .adjustments-tool { flex: none; }
 .adjustments-trigger { display: flex; align-items: center; gap: 5px; padding: 6px 8px; }
 .adjustments-trigger[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }

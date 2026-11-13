@@ -219,7 +219,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </button>
       </header>
       <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} appearance={appearance} language={language} onSelectLanguage={selectLanguage} />
-      <div className={`editor${adjustmentsOpen ? " adjustments-open" : ""}`} hidden={showSettings}>
+      <div className="editor" hidden={showSettings}>
       <div className="editor-scroll">
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
         <div className="target-overview">
@@ -302,7 +302,6 @@ export default function App({ appearance }: { appearance: AppearanceController }
           </fieldset>
         </div>
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
-        {imageBadge && <p className="muted">{t("badge.imported")}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
         {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
