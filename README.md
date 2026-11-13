@@ -22,7 +22,7 @@ Dimple is an independently maintained GUI project inspired by [lgarron/folderify
 
 ## Installation
 
-The release distribution is intended to provide a Universal app and DMG for Apple Silicon and Intel Macs. Minimum macOS version, tested hardware and storage combinations, download location, SHA-256, and signing/notarization status remain to be confirmed before publication. The version in the build configuration is not a verified support claim.
+The release distribution is intended to provide a Universal app and DMG for Apple Silicon and Intel Macs. The build requires macOS 13.3 or later to cover the Safari 16.4 WebKit features required by Tailwind CSS v4 and the native HTML confirmation dialog. This configuration floor is not a verified support claim: Intel, older macOS versions, and special storage environments remain unverified. Tested hardware and storage, download location, SHA-256, and signing/notarization status will be recorded before publication.
 
 To install the release, open its DMG, drag **Dimple** to **Applications**, and launch it. The installed app includes its runtime resources; Python, ImageMagick, Homebrew, and development tools are not required.
 
@@ -118,7 +118,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
 ```
 
-Build outputs are under `src-tauri/target/`. Local app bundles use a complete ad-hoc signature with hardened runtime disabled; this is not Developer ID signing or notarization. Verify a bundled app with `codesign --verify --deep --strict --verbose=2 path/to/Dimple.app`. Distribution signing and runtime compatibility still require separate verification. `check:rust` runs fmt, Clippy with warnings treated as errors, and unit tests. Folder-writing tests must use isolated temporary directories.
+Build outputs are under `src-tauri/target/`. The executable and process are named `Dimple`, matching the app name. Local app bundles use a complete ad-hoc signature with hardened runtime disabled; this is not Developer ID signing or notarization. Verify a bundled app with `codesign --verify --deep --strict --verbose=2 path/to/Dimple.app`. Distribution signing and runtime compatibility still require separate verification. `check:rust` runs fmt, Clippy with warnings treated as errors, and unit tests. Folder-writing tests must use isolated temporary directories.
 
 Launch a packaged app from Finder, Spotlight, or `open path/to/Dimple.app`. Running the executable inside `Contents/MacOS` directly can inherit its terminal host's macOS process attribution. On macOS 26, a stale menu-bar association with a disabled host can hide the icon even when Dimple is allowed. Do not reset Control Center or edit its private preferences as a routine installation step. The application identifier remains `dev.efun.folderify-desktop` to preserve settings and system permissions across the rename.
 

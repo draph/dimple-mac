@@ -22,7 +22,7 @@ Dimple 是独立维护的图形界面项目，以 [lgarron/folderify](https://gi
 
 ## 安装
 
-发布目标是面向 Apple Silicon 和 Intel Mac 的 Universal 应用及 DMG。最低 macOS 版本、已测硬件和存储组合、下载位置、SHA-256 及签名／公证状态将在公开前确定。构建配置中的系统版本不代表已经验证的支持范围。
+发布目标是面向 Apple Silicon 和 Intel Mac 的 Universal 应用及 DMG。构建要求 macOS 13.3 或更新版本，以覆盖 Tailwind CSS v4 所需的 Safari 16.4 WebKit 能力及原生 HTML 确认框。此配置下限不代表已经验证的支持范围：Intel、旧系统和特殊存储环境仍未验证。已测硬件和存储、下载位置、SHA-256 及签名／公证状态将在公开前记录。
 
 安装发布版时，打开 DMG，将 **Dimple** 拖入**应用程序**，然后启动。安装包自带运行所需资源，无需安装 Python、ImageMagick、Homebrew 或开发工具。
 
@@ -118,7 +118,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
 ```
 
-构建产物位于 `src-tauri/target/` 下。本地应用包使用完整的 ad-hoc 签名，暂不启用 hardened runtime；这不等于 Developer ID 签名或公证。可用 `codesign --verify --deep --strict --verbose=2 path/to/Dimple.app` 验证应用包。发行签名和运行兼容性仍须单独验证。`check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。文件夹写入测试必须使用隔离临时目录。
+构建产物位于 `src-tauri/target/` 下。可执行文件和进程名均为 `Dimple`，与应用名一致。本地应用包使用完整的 ad-hoc 签名，暂不启用 hardened runtime；这不等于 Developer ID 签名或公证。可用 `codesign --verify --deep --strict --verbose=2 path/to/Dimple.app` 验证应用包。发行签名和运行兼容性仍须单独验证。`check:rust` 执行 fmt、Clippy（警告视为错误）和单元测试。文件夹写入测试必须使用隔离临时目录。
 
 打包后的应用应从 Finder、聚焦或 `open path/to/Dimple.app` 启动。直接运行 `Contents/MacOS` 内的可执行文件可能继承终端宿主的 macOS 进程归属。macOS 26 中，与已禁用宿主的残留菜单栏关联可能导致 Dimple 开关已开启但图标仍隐藏。不要将重置控制中心或修改其私有配置作为常规安装步骤。应用标识继续保留 `dev.efun.folderify-desktop`，以沿用改名前的设置和系统权限。
 

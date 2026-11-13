@@ -49,7 +49,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15",
+      "minimumSystemVersion": "13.3",
       "signingIdentity": "-",
       "hardenedRuntime": false,
       "infoPlist": "Info.plist"

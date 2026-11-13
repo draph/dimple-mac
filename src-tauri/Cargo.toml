@@ -5,6 +5,10 @@ description = "A macOS menu bar app for customizing folder icons"
 license = "MIT"
 edition = "2024"
 
+[[bin]]
+name = "Dimple"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
