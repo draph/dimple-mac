@@ -10,7 +10,7 @@ const thumbnails = import.meta.glob<string>("./assets/*.svg", { query: "?url", i
 const badgeTabs = ["icon", "text", "image"] as const;
 
 import { acceptSession, sameContext, sameDraft, settingsBlocked } from "./session";
-import type { PreparedOperation, PrepareOperation, RenderParams } from "./contracts";
+import type { Effect, PreparedOperation, PrepareOperation, RenderParams } from "./contracts";
 import { TextBadge } from "./TextBadge";
 import { Adjustments } from "./Adjustments";
 import { ShortcutSettings } from "./ShortcutSettings";
@@ -153,6 +153,25 @@ export default function App({ appearance }: { appearance: AppearanceController }
     void invoke(name, args).then(() => refreshSession(generation)).catch(error => {
       if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error });
     });
+  };
+  const effectGuard = useRef(false);
+  const changeEffect = async (effect: Effect) => {
+    if (effectGuard.current || busy || paramsPending || !entry) return;
+    effectGuard.current = true;
+    const before = current.current;
+    const generation = epoch.current;
+    onParamsChange({ ...entry.params, effect }, true);
+    try {
+      await invoke("set_render_params", { params: { ...entry.params, effect },
+        expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null });
+      await refreshSession(generation);
+    } catch (error) {
+      await refreshSession(generation).catch(() => null);
+      if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error });
+    } finally {
+      effectGuard.current = false;
+      onParamsChange(null, false);
+    }
   };
   const commit = async (p: PreparedOperation, generation: number) => {
     if (generation !== epoch.current) return;
@@ -301,13 +320,14 @@ export default function App({ appearance }: { appearance: AppearanceController }
           <p id="badge-image-hint" className="muted">{t("badge.importHint")}</p>
           <fieldset className="badge-effects" disabled={!imageBadge || busy || textQueued || paramsPending || entry?.importing}>
             <legend>{t("badge.effect")}</legend>
-            <label><input type="radio" name="badge-effect" value="engraved" checked readOnly />{t("badge.effect.engraved")}</label>
-            <label><input type="radio" name="badge-effect" value="original" disabled />{t("badge.effect.originalSoon")}</label>
+            <label><input type="radio" name="badge-effect" value="engraved" checked={renderParams.effect === "engraved"} disabled={!entry?.badge.effects.includes("engraved")} aria-describedby={entry?.badge.opaque ? "badge-opaque-hint" : undefined} onChange={() => void changeEffect("engraved")} />{t("badge.effect.engraved")}</label>
+            <label><input type="radio" name="badge-effect" value="original" checked={renderParams.effect === "original"} disabled={!entry?.badge.effects.includes("original")} onChange={() => void changeEffect("original")} />{t("badge.effect.original")}</label>
+            <p className="muted">{t(renderParams.effect === "original" ? "badge.originalHint" : "badge.engravedHint")}</p>
           </fieldset>
         </div>
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
-        {entry?.badge.opaque && <p role="status" className="muted">{t("badge.opaque")}</p>}
+        {entry?.badge.opaque && <p id="badge-opaque-hint" role="status" className="muted">{t("badge.opaque")}</p>}
         {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
       </section>
       </div>

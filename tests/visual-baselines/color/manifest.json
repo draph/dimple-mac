@@ -1,0 +1,114 @@
+{
+  "environment": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+    "platform": "MacIntel",
+    "dpr": 2
+  },
+  "params": {
+    "effect": "original",
+    "scale": 1,
+    "offsetX": 0,
+    "offsetY": 0,
+    "theme": "native"
+  },
+  "images": [
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 16,
+      "file": "color-svg-16.png",
+      "sha256": "922d15c13c7019a316acdcb18ec09b72458d8b5e078fc0d0e0ac44c9df7c9411"
+    },
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 32,
+      "file": "color-svg-32.png",
+      "sha256": "09d01905a475e00863459b0f92a1406f4eb9d0c78f18c1fe7393be208d5d3ef3"
+    },
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 64,
+      "file": "color-svg-64.png",
+      "sha256": "f5644b3c30964ae546f75abd72c8d588fa449bb99cb003a6ec34cdadfe167ee0"
+    },
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 128,
+      "file": "color-svg-128.png",
+      "sha256": "605b8ba984e9ec1d0c1a10c088c95cd39b908c62f15f9df4b93f8578fdec9e88"
+    },
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 256,
+      "file": "color-svg-256.png",
+      "sha256": "2855f5234df18e2e1faf2af1c0e19603bcd13a14731b117ffc20cb878c80b415"
+    },
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 512,
+      "file": "color-svg-512.png",
+      "sha256": "5400f1165e994e5baea668910b3e7a858b1213a8e49ad77b8dba37290728f247"
+    },
+    {
+      "sample": "color-svg",
+      "theme": "native",
+      "size": 1024,
+      "file": "color-svg-1024.png",
+      "sha256": "108248260a6c75896cd7168bcdd50a4dc70e27dd113a03007667dd85ee338961"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 16,
+      "file": "color-jpeg-16.png",
+      "sha256": "317a6cf3b423456f6b1923c9be037ea1d24f1173dbbaf03ba24fa53775225fa5"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 32,
+      "file": "color-jpeg-32.png",
+      "sha256": "29f7b4b34fffbd9dbcc2dfd1e177668f85a7563604c6df98340a03c351587fba"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 64,
+      "file": "color-jpeg-64.png",
+      "sha256": "b0edeef9301c36762ac49621924c57631caf0a88421117b27e1d3c1e124b9e39"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 128,
+      "file": "color-jpeg-128.png",
+      "sha256": "fa100135e44db894c03086d77a485ea3fe4b266ff9435c42c4298b0589531883"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 256,
+      "file": "color-jpeg-256.png",
+      "sha256": "eacf6369b3e3798f63cb85e3bef8a961fe6262b3b132439ec5d654c5a4022224"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 512,
+      "file": "color-jpeg-512.png",
+      "sha256": "0df2db05dfd2ca54237036ae7467b8c9a79ccc29220a8af80b5496dc458be643"
+    },
+    {
+      "sample": "color-jpeg",
+      "theme": "native",
+      "size": 1024,
+      "file": "color-jpeg-1024.png",
+      "sha256": "e804032f748d7dd186053bdbde0a89b156b70fbd33587fb4764f3f41300e9659"
+    }
+  ]
+}

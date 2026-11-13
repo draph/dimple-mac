@@ -36,6 +36,7 @@
 				<string>public.folder</string>
 				<string>public.png</string>
 				<string>public.svg-image</string>
+				<string>public.jpeg</string>
 			</array>
 			<key>NSSendTypes</key>
 			<array>

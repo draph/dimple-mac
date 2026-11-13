@@ -21,18 +21,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let output = fixtures.join("visual-masks");
     fs::create_dir_all(&output)?;
 
+    let color_output = fixtures.join("color/normalized");
+    fs::create_dir_all(&color_output)?;
     for (name, source) in [
         ("svg", fixtures.join("geometric-cross.svg")),
         ("png", fixtures.join("t14-asymmetric.png")),
         ("builtin", tests.join("../src/assets/code.svg")),
         ("text", fixtures.join("t14-text-f.png")),
+        ("color-svg", fixtures.join("color/color.svg")),
+        ("color-jpeg", fixtures.join("color/rgb.jpg")),
     ] {
         let mask = assets::load(&source).map_err(|_| format!("E_VISUAL_MASK {name}"))?;
         if mask.width == 0 || mask.height == 0 || mask.width.max(mask.height) > 1024 {
             return Err(format!("E_VISUAL_MASK_DIMENSIONS {name}").into());
         }
         let png = STANDARD.decode(mask.png)?;
-        fs::write(output.join(format!("{name}.png")), png)?;
+        let directory = if name.starts_with("color-") {
+            &color_output
+        } else {
+            &output
+        };
+        fs::write(directory.join(format!("{name}.png")), png)?;
         println!(
             "MASK {name} {}x{} bounds={:?}",
             mask.width, mask.height, mask.bounds

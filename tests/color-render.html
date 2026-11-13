@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8"><title>Original color rendering regression</title>
+<p id="result" role="status">Running…</p><div id="gallery"></div>
+<script type="module">
+import { exportImages } from '/src/Preview.tsx';
+import { defaultParams, outputSizes } from '/src/renderParams.ts';
+const load = async url => { const image = new Image(); image.src = url; await image.decode(); return image; };
+const pixels = image => {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = image.naturalWidth;
+  const ctx = canvas.getContext('2d'); ctx.drawImage(image,0,0);
+  return ctx.getImageData(0,0,canvas.width,canvas.height).data;
+};
+let assertions = 0;
+const check = (ok, message) => { if (!ok) throw Error(message); assertions++; };
+try {
+  const all = [];
+  for (const sample of ['color-svg', 'color-jpeg']) {
+    const source = `/tests/fixtures/badges/color/normalized/${sample}.png`;
+    const original = await exportImages(source, { ...defaultParams, effect: 'original' });
+    const tinted = await exportImages(source, { ...defaultParams, effect: 'original', theme: '#EF4444' });
+    const engraved = await exportImages(source, defaultParams);
+    let payloadBytes = 0;
+    for (let i = 0; i < outputSizes.length; i++) {
+      const {size,png} = original[i];
+      payloadBytes += atob(png).length;
+      const image = await load(`data:image/png;base64,${png}`);
+      const data = pixels(image);
+      const red = pixels(await load(`data:image/png;base64,${tinted[i].png}`));
+      check(image.naturalWidth === size && image.naturalHeight === size, 'All seven dimensions must match');
+      const x = Math.floor(size * .42), y = Math.floor(size * .48), offset = (y*size+x)*4;
+      check(data[offset] > 200 && data[offset+1] < 55 && data[offset+2] < 90, `${sample}/${size}: original red must survive`);
+      check(data.slice(offset,offset+4).every((v,c) => v === red[offset+c]), 'Folder tint must not recolor opaque badge pixels');
+      check(png !== engraved[i].png, 'Original must not use the engraved output');
+      // Independent source-over reference for placement, scale, transparency and all pixels.
+      const badge = await load(source), canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const names = {16:'16x16',32:'16x16@2x',64:'32x32@2x',128:'128x128',256:'128x128@2x',512:'256x256@2x',1024:'512x512@2x'};
+      ctx.scale(size/1024,size/1024);
+      ctx.drawImage(await load(`/src/folder-templates/GenericFolderIcon.BigSur.iconset/icon_${names[size]}.png`),0,0,1024,1024);
+      const w = 384*badge.naturalWidth/Math.max(badge.naturalWidth,badge.naturalHeight);
+      const h = 384*badge.naturalHeight/Math.max(badge.naturalWidth,badge.naturalHeight);
+      ctx.drawImage(badge,(1024-w)/2,548-h/2,w,h);
+      const expected = pixels(await load(canvas.toDataURL('image/png')));
+      // Chromium can choose different interpolation paths around tiny JPEG color boundaries.
+      const edgesX = [(1024-w)/2, 512, (1024+w)/2].map(v=>v*size/1024);
+      const edgesY = [548-h/2, 548, 548+h/2].map(v=>v*size/1024);
+      check(expected.every((v,c) => {
+        const pixel = Math.floor(c/4), x = pixel%size+.5, y = Math.floor(pixel/size)+.5;
+        if (sample === 'color-jpeg' && (edgesX.some(e=>Math.abs(x-e)<1) || edgesY.some(e=>Math.abs(y-e)<1))) return true;
+        return Math.abs(v-data[c]) <= (sample === "color-jpeg" ? 1 : 0);
+      }), `${sample}/${size}: source-over colors and background must match away from resampling boundaries`);
+      all.push({ sample, theme: 'native', size, png });
+      const preview = document.createElement('img'); preview.src = image.src; preview.width = preview.height = 128;
+      preview.alt = `${sample}/${size}`; document.querySelector('#gallery').append(preview);
+    }
+    check(payloadBytes < 8*1024*1024, 'Seven images must fit the binary transport budget');
+    check(JSON.stringify(original).length < 12*1024*1024, 'Seven images must fit the JSON transport budget');
+  }
+  window.colorBaselineData = { environment: {userAgent:navigator.userAgent,platform:navigator.platform,dpr:devicePixelRatio},all };
+  const golden = await (await fetch('/tests/visual-baselines/color/manifest.json')).json();
+  const sameEnvironment = JSON.stringify(golden.environment) === JSON.stringify(window.colorBaselineData.environment);
+  if (sameEnvironment) for (const image of golden.images) {
+    const bytes = new Uint8Array(await (await fetch(`/tests/visual-baselines/color/${image.file}`)).arrayBuffer());
+    const png = btoa(Array.from(bytes, byte=>String.fromCharCode(byte)).join(''));
+    check(all.find(a=>a.sample===image.sample&&a.size===image.size)?.png === png, 'Recorded original color golden must match');
+  }
+  document.querySelector('#result').textContent = `PASS: ${assertions} color rendering assertions${sameEnvironment ? '' : ' (golden comparison skipped: different browser environment)'}`;
+} catch (error) { document.querySelector('#result').textContent = `FAIL: ${error.message}`; throw error; }
+</script>

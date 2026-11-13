@@ -142,7 +142,7 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
       </label>
       <p className="muted">{t("adjust.hint")}</p>
       {invalid && <p role="alert" className="error">{t("adjust.invalid")}</p>}
-      <button onClick={() => enqueue({ ...defaultParams })}>{t("adjust.reset")}</button>
+      <button onClick={() => enqueue({ ...defaultParams, effect: value.current.effect })}>{t("adjust.reset")}</button>
     </fieldset>
     {error !== null && <p role="alert" className="error">{errorMessage(locale, error)}</p>}
     </div>

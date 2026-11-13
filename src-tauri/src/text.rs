@@ -130,7 +130,12 @@ pub fn render(text: &str) -> Result<Mask, AppError> {
         {
             return Err(error("render"));
         }
-        crate::assets::normalize(alpha, w as u32, h as u32, false).map_err(|_| error("empty"))
+        crate::assets::normalize_rgba(
+            alpha.into_iter().flat_map(|a| [255, 255, 255, a]).collect(),
+            w as u32,
+            h as u32,
+        )
+        .map_err(|_| error("empty"))
     }
 }
 
@@ -200,13 +205,13 @@ mod tests {
             .unwrap();
         let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
         reader.next_frame(&mut pixels).unwrap();
-        let row = mask.width as usize * 2;
+        let row = mask.width as usize * 4;
         let coverage = |y: usize| {
             pixels[y * row..(y + 1) * row]
-                .as_chunks::<2>()
+                .as_chunks::<4>()
                 .0
                 .iter()
-                .filter(|p| p[1] > 0)
+                .filter(|p| p[3] > 0)
                 .count()
         };
         assert!(coverage(mask.height as usize / 20) > 2 * coverage(mask.height as usize * 9 / 10));

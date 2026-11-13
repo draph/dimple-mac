@@ -42,6 +42,13 @@ pub enum Action {
     },
     Restore {},
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effect {
+    #[default]
+    Engraved,
+    Original,
+}
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
@@ -49,6 +56,8 @@ pub struct Params {
     offset_x: f64,
     offset_y: f64,
     pub theme: String,
+    #[serde(default)]
+    pub effect: Effect,
 }
 impl Default for Params {
     fn default() -> Self {
@@ -57,6 +66,7 @@ impl Default for Params {
             offset_x: 0.,
             offset_y: 0.,
             theme: "native".into(),
+            effect: Effect::Engraved,
         }
     }
 }
@@ -435,6 +445,20 @@ mod tests {
         parse(r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#).unwrap()
     }
     #[test]
+    fn effects_default_to_engraved_and_reject_unknown_values() {
+        let input = serde_json::json!({"scale":1,"offsetX":0,"offsetY":0,"theme":"native"});
+        let params: Params = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(params.effect, Effect::Engraved);
+        for effect in ["original", "unknown"] {
+            let mut input = input.clone();
+            input["effect"] = effect.into();
+            assert_eq!(
+                serde_json::from_value::<Params>(input).is_ok(),
+                effect == "original"
+            );
+        }
+    }
+    #[test]
     fn render_params_validate_themes_and_numeric_boundaries() {
         for color in ["native", "#EF4444", "#000000", "#ffffff"] {
             for scale in [0.25, 2.] {
@@ -509,6 +533,7 @@ mod tests {
                 template_id: "big-sur-light-blue".into(),
                 badge_id: "code".into(),
                 params: Params {
+                    effect: Effect::Engraved,
                     scale: 1.,
                     offset_x: 0.,
                     offset_y: 0.,

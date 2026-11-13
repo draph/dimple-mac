@@ -1,0 +1,62 @@
+<!doctype html><meta charset="utf-8"><title>Color effect state regression</title>
+<p id="result" role="status">Running…</p><div id="root"></div>
+<script type="module">
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { mockIPC } from '@tauri-apps/api/mocks';
+import { emit } from '@tauri-apps/api/event';
+import App from '/src/App.tsx';
+import { defaultParams } from '/src/renderParams.ts';
+import { createAppearance } from '/src/appearance.ts';
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const png = btoa(String.fromCharCode(...new Uint8Array(await (await fetch('/tests/fixtures/badges/color/normalized/color-svg.png')).arrayBuffer())));
+const entry = {params:{...defaultParams},badge:{id:'badge-test',width:80,height:48,opaque:false,effects:['engraved','original'],text:null},badgeError:null,importing:false,text:null,textCount:null,textPending:false,revision:1,editRevision:1,source:'picker',items:[{id:'folder',path:'/tmp/isolated-test',actualPath:'/tmp/isolated-test',linked:false,kind:'directory',error:null}],issues:[],error:null,choosing:false,reading:false,checking:false,preparing:false};
+const session = {version:'test',locale:'en',entry,operation:{canStop:false,canRetry:false,canContinue:false,revision:1,prepared:null,progress:null}};
+let release, updates=0, prepared;
+mockIPC(async (cmd,args)=>{
+  if(cmd==='get_session')return structuredClone(session);
+  if(cmd==='get_language')return {locale:'en',preference:'system',saved:false,revision:0};
+  if(cmd==='get_badge_mask')return png;
+  if(cmd==='panel_visible')return true;
+  if(cmd==='get_shortcut_settings')return {settings:{enabled:false,shortcut:'alt+KeyF'},active:[],uncertain:[],saved:false,error:null,open:false,capturing:false};
+  if(cmd==='set_render_params'){
+    updates++;
+    if(release===undefined)await new Promise(done=>release=done);
+    if(args.expectedEditRevision!==entry.editRevision)throw Error('stale edit');
+    entry.params=structuredClone(args.params); entry.editRevision++; entry.revision++; return;
+  }
+  if(cmd==='prepare_operation'){prepared=JSON.parse(args.request);throw {code:'invalid_input',params:{reason:'images'}};}
+}, {shouldMockEvents:true});
+const root=createRoot(document.querySelector('#root'));
+const appearance=createAppearance(()=>localStorage,matchMedia('(prefers-color-scheme: dark)'),document.documentElement);
+let count=0;
+const check=(ok,message)=>{if(!ok)throw Error(message);count++;};
+const settle=async condition=>{for(let i=0;i<60;i++){await act(async()=>{await new Promise(requestAnimationFrame);});if(condition())return;}throw Error('UI did not settle');};
+try{
+ await act(async()=>root.render(React.createElement(App,{appearance})));
+ await settle(()=>document.querySelector('.primary')&&!document.querySelector('.action-bar .primary').disabled);
+ await act(async()=>document.querySelector('#badge-tab-image').click());
+ const original=()=>document.querySelector('input[value="original"]'), engraved=()=>document.querySelector('input[value="engraved"]');
+ check(engraved().checked,'Transparent imports initially use engraving');
+ await act(async()=>{original().click(); original().click(); document.querySelector('.action-bar .primary').click();});
+ check(updates===1,'Rapid effect clicks submit one parameter edit');
+ check(document.querySelector('.action-bar .primary').disabled&&!prepared,'Apply must wait for the effect edit and preview');
+ await act(async()=>release());
+ await settle(()=>!document.querySelector('.action-bar .primary').disabled);
+ check(original().checked&&entry.params.effect==='original','The accepted effect must reach the preview');
+ await act(async()=>document.querySelector('.adjustments-trigger').click());
+ await act(async()=>[...document.querySelectorAll('#adjustments-panel button')].find(b=>b.textContent==='Reset adjustments').click());
+ await settle(()=>updates===2&&!document.querySelector('.action-bar .primary').disabled);
+ check(entry.params.effect==='original','Reset must preserve original colors');
+ await act(async()=>document.querySelector('.action-bar .primary').click());
+ await settle(()=>!!prepared);
+ check(prepared.action.params.effect==='original'&&prepared.action.images.length===7,'Apply must freeze the accepted effect and all seven images');
+ await act(async()=>{entry.badge.opaque=true;entry.badge.effects=['original'];entry.revision++;await emit('entry-changed');});
+ check(engraved().disabled&&original().checked,'Opaque images must disable engraving');
+ check(document.querySelector('#badge-opaque-hint')?.textContent.includes('only supports original colors'),'The disabled effect must explain why');
+ await act(async()=>{entry.badgeError={code:'asset_error',params:{reason:'damaged'}};entry.revision++;await emit('entry-changed');});
+ check(original().checked&&document.querySelector('.action-bar .primary').disabled,'Failed import retains effect while blocking old preview application');
+ document.querySelector('#result').textContent=`PASS: ${count} effect state assertions`;
+}catch(error){document.querySelector('#result').textContent=`FAIL: ${error.message}`;throw error;}
+finally{await act(async()=>root.unmount());}
+</script>

@@ -9,6 +9,8 @@ test("render parameters reject unsafe values and accept inclusive boundaries", (
   for (const patch of [{scale: NaN}, {scale: Infinity}, {scale: .24}, {scale: 2.01}, {offsetX: 101}, {offsetY: -101}, {theme: "red"}, {theme: "#FFF"}, {theme: "#12345G"}]) {
     assert.equal(validParams({ ...defaultParams, ...patch }), false);
   }
+  assert.ok(validParams({ ...defaultParams, effect: "original" }));
+  assert.equal(validParams({ ...defaultParams, effect: "unknown" } as never), false);
   for (const [, theme] of themes) assert.ok(validParams({ ...defaultParams, theme }));
 });
 

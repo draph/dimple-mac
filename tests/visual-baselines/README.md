@@ -5,7 +5,7 @@ The golden PNGs in this directory were exported by Safari on macOS 26.6.2
 the input hashes, seven output sizes, engraving offsets, theme colors, ICNS
 representations, and exact RGBA thresholds.
 
-The input files are converted to the same cropped Alpha masks used by the app.
+The input files are converted to the same cropped RGBA images used by the app. Engraving reads only their Alpha; color channels and PNG encoding do not change the historical engraving goldens.
 Regenerate them after changing a source fixture with:
 
 ```sh
@@ -34,3 +34,5 @@ informational metrics and notes in
 [`upstream-reference/README.md`](upstream-reference/README.md). Regenerating
 the reference is a development-only step that requires ImageMagick; neither
 ImageMagick nor the reference images are packaged with the application.
+
+Original-color regression images and checks are documented in [color/README.md](color/README.md).

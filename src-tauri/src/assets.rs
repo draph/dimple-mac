@@ -10,6 +10,9 @@ use std::{
     str::FromStr,
 };
 
+#[path = "assets/jpeg.rs"]
+mod jpeg;
+
 const FILE_LIMIT: usize = 10 * 1024 * 1024;
 const NODE_LIMIT: usize = 20_000;
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
@@ -69,6 +72,7 @@ pub fn load(path: &Path) -> Result<Mask, AppError> {
     {
         Some("png") => png_mask(&bytes),
         Some("svg") => svg_mask(&bytes),
+        Some("jpg" | "jpeg") => jpeg::decode(&bytes),
         _ => Err(error("type")),
     }
 }
@@ -99,31 +103,41 @@ fn png_mask(bytes: &[u8]) -> Result<Mask, AppError> {
     if frame.bit_depth != png::BitDepth::Eight {
         return Err(error("unsupported"));
     }
-    let alpha = match frame.color_type {
-        png::ColorType::Rgba => pixels[..frame.buffer_size()]
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|p| p[3])
-            .collect(),
+    let rgba = match frame.color_type {
+        png::ColorType::Rgba => pixels[..frame.buffer_size()].to_vec(),
         png::ColorType::GrayscaleAlpha => pixels[..frame.buffer_size()]
             .as_chunks::<2>()
             .0
             .iter()
-            .map(|p| p[1])
+            .flat_map(|p| [p[0], p[0], p[0], p[1]])
             .collect(),
-        png::ColorType::Rgb | png::ColorType::Grayscale => vec![255; (w * h) as usize],
+        png::ColorType::Rgb => pixels[..frame.buffer_size()]
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        png::ColorType::Grayscale => pixels[..frame.buffer_size()]
+            .iter()
+            .flat_map(|&v| [v, v, v, 255])
+            .collect(),
         _ => return Err(error("unsupported")),
     };
     reader.finish().map_err(|_| error("damaged"))?;
-    normalize(alpha, w, h, true)
+    normalize_rgba(rgba, w, h)
 }
-pub(crate) fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<Mask, AppError> {
+pub(crate) fn normalize_rgba(rgba: Vec<u8>, w: u32, h: u32) -> Result<Mask, AppError> {
+    dimensions(w, h)?;
+    if rgba.len() != (w * h * 4) as usize {
+        return Err(error("damaged"));
+    }
+    let opaque = rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 255);
     let mut left = w;
     let mut top = h;
     let mut right = 0;
     let mut bottom = 0;
-    for (i, &a) in alpha.iter().enumerate() {
+    for (i, pixel) in rgba.as_chunks::<4>().0.iter().enumerate() {
+        let a = pixel[3];
         if a != 0 {
             let x = i as u32 % w;
             let y = i as u32 / w;
@@ -141,7 +155,7 @@ pub(crate) fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<
     let factor = (1024.0 / f64::from(bw.max(bh))).min(1.0);
     let ow = (f64::from(bw) * factor).round().max(1.0) as u32;
     let oh = (f64::from(bh) * factor).round().max(1.0) as u32;
-    let mut out = Vec::with_capacity((ow * oh * 2) as usize);
+    let mut out = Vec::with_capacity((ow * oh * 4) as usize);
     for y in 0..oh {
         for x in 0..ow {
             // Area sampling preserves thin Alpha features while reducing large inputs.
@@ -149,24 +163,46 @@ pub(crate) fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<
             let x1 = f64::from(x + 1) * f64::from(bw) / f64::from(ow);
             let y0 = f64::from(y) * f64::from(bh) / f64::from(oh);
             let y1 = f64::from(y + 1) * f64::from(bh) / f64::from(oh);
-            let mut sum = 0.0;
+            let mut sum = [0.0; 4];
             for sy in y0.floor() as u32..(y1.ceil() as u32).min(bh) {
                 for sx in x0.floor() as u32..(x1.ceil() as u32).min(bw) {
                     let weight = (x1.min(f64::from(sx + 1)) - x0.max(f64::from(sx)))
                         * (y1.min(f64::from(sy + 1)) - y0.max(f64::from(sy)));
-                    sum += f64::from(alpha[((sy + top) * w + sx + left) as usize]) * weight;
+                    let i = (((sy + top) * w + sx + left) * 4) as usize;
+                    let alpha = f64::from(rgba[i + 3]);
+                    for c in 0..3 {
+                        sum[c] += f64::from(rgba[i + c]) * alpha * weight;
+                    }
+                    sum[3] += alpha * weight;
                 }
             }
-            out.extend_from_slice(&[255, (sum / ((x1 - x0) * (y1 - y0))).round() as u8]);
+            out.extend_from_slice(&[
+                if sum[3] > 0.0 {
+                    (sum[0] / sum[3]).round() as u8
+                } else {
+                    0
+                },
+                if sum[3] > 0.0 {
+                    (sum[1] / sum[3]).round() as u8
+                } else {
+                    0
+                },
+                if sum[3] > 0.0 {
+                    (sum[2] / sum[3]).round() as u8
+                } else {
+                    0
+                },
+                (sum[3] / ((x1 - x0) * (y1 - y0))).round() as u8,
+            ]);
         }
     }
-    if !out.as_chunks::<2>().0.iter().any(|p| p[1] != 0) {
+    if !out.as_chunks::<4>().0.iter().any(|p| p[3] != 0) {
         return Err(error("empty"));
     }
     let mut encoded = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut encoded, ow, oh);
-        encoder.set_color(png::ColorType::GrayscaleAlpha);
+        encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().map_err(|_| error("damaged"))?;
         writer
@@ -181,7 +217,7 @@ pub(crate) fn normalize(alpha: Vec<u8>, w: u32, h: u32, is_png: bool) -> Result<
         original_width: w,
         original_height: h,
         bounds: [left, top, bw, bh],
-        opaque: is_png && alpha.iter().all(|&a| a == 255),
+        opaque,
     })
 }
 
@@ -214,15 +250,15 @@ pub fn svg_mask(bytes: &[u8]) -> Result<Mask, AppError> {
     )?;
     let mut pixmap = tiny_skia::Pixmap::new(rw, rh).ok_or_else(|| error("dimensions"))?;
     resvg::render(&tree, transform, &mut pixmap.as_mut());
-    let alpha = pixmap
-        .data()
-        .as_chunks::<4>()
-        .0
+    let rgba = pixmap
+        .pixels()
         .iter()
-        .map(|p| p[3])
+        .flat_map(|p| {
+            let p = p.demultiply();
+            [p.red(), p.green(), p.blue(), p.alpha()]
+        })
         .collect();
-    drop(pixmap);
-    normalize(alpha, rw, rh, false)
+    normalize_rgba(rgba, rw, rh)
 }
 
 fn check_layers(
@@ -747,6 +783,86 @@ mod tests {
             .unwrap()
             .to_string()
     }
+    fn decoded(mask: &Mask) -> Vec<u8> {
+        let bytes = STANDARD.decode(&mask.png).unwrap();
+        let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info().unwrap();
+        let mut data = vec![0; reader.output_buffer_size().unwrap()];
+        reader.next_frame(&mut data).unwrap();
+        data
+    }
+    #[test]
+    fn colors_and_alpha_survive_png_and_svg_normalization() {
+        let mask = png_mask(&png_bytes(
+            2,
+            1,
+            png::ColorType::Rgba,
+            &[20, 100, 200, 128, 30, 60, 90, 255],
+        ))
+        .unwrap();
+        assert_eq!(decoded(&mask), [20, 100, 200, 128, 30, 60, 90, 255]);
+        assert!(!mask.opaque);
+        let gray = png_mask(&png_bytes(1, 1, png::ColorType::Grayscale, &[73])).unwrap();
+        assert_eq!(decoded(&gray), [73, 73, 73, 255]);
+        assert!(gray.opaque);
+        let mask = svg_mask(&svg(
+            "<rect width=\"16\" height=\"16\" fill=\"red\" opacity=\"0.5\"/>",
+        ))
+        .unwrap();
+        assert_eq!(&decoded(&mask)[..4], &[255, 0, 0, 128]);
+        assert!(!mask.opaque);
+        assert!(
+            svg_mask(&svg("<rect width=\"16\" height=\"16\" fill=\"red\"/>"))
+                .unwrap()
+                .opaque
+        );
+        let margins = normalize_rgba(vec![0, 255, 0, 0, 255, 0, 0, 255], 2, 1).unwrap();
+        assert!(!margins.opaque);
+        assert_eq!(margins.bounds, [1, 0, 1, 1]);
+    }
+    #[test]
+    fn downsampling_weights_colors_by_alpha_without_colored_fringes() {
+        let rgba = (0..2048)
+            .flat_map(|i| {
+                if i % 2 == 0 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 255, 0, 0]
+                }
+            })
+            .collect();
+        let mask = normalize_rgba(rgba, 2048, 1).unwrap();
+        let data = decoded(&mask);
+        assert_eq!(mask.width, 1024);
+        assert!(
+            data.as_chunks::<4>()
+                .0
+                .iter()
+                .take(1023)
+                .all(|p| *p == [255, 0, 0, 128])
+        );
+        assert!(
+            data.as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| p[0] == 255 && p[1] == 0 && p[2] == 0)
+        );
+    }
+    #[test]
+    fn jpeg_extensions_are_case_insensitive_and_share_file_budgets() {
+        for ext in ["jpg", "jpeg", "JPG", "JPEG", "JpEg"] {
+            let path = std::env::temp_dir()
+                .join(crate::targets::next_id("jpeg-test"))
+                .with_extension(ext);
+            std::fs::write(
+                &path,
+                include_bytes!("../../tests/fixtures/badges/color/rgb.jpg"),
+            )
+            .unwrap();
+            let result = load(&path);
+            std::fs::remove_file(&path).unwrap();
+            assert!(result.unwrap().opaque);
+        }
+    }
     #[test]
     fn file_budget_and_special_file_reads_are_bounded() {
         let path = std::env::temp_dir()
@@ -812,7 +928,12 @@ mod tests {
         let mut reader = png::Decoder::new(Cursor::new(encoded)).read_info().unwrap();
         let mut data = vec![0; reader.output_buffer_size().unwrap()];
         reader.next_frame(&mut data).unwrap();
-        assert_eq!(data, [255, 128, 255, 0, 255, 0, 255, 255]);
+        assert_eq!(
+            data,
+            [
+                255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255
+            ]
+        );
         assert!(
             png_mask(&png_bytes(2, 2, png::ColorType::Rgb, &[255; 12]))
                 .unwrap()
@@ -833,7 +954,7 @@ mod tests {
         assert!(dimensions(4096, 3906).is_ok());
         assert!(dimensions(4096, 3907).is_err());
         assert!(dimensions(4097, 1).is_err());
-        let m = normalize(vec![128; 2048 * 2], 2048, 2, true).unwrap();
+        let m = normalize_rgba([255, 255, 255, 128].repeat(2048 * 2), 2048, 2).unwrap();
         assert_eq!((m.width, m.height), (1024, 1));
         assert_eq!(m.bounds, [0, 0, 2048, 2]);
         assert_eq!(reason(png_mask(b"broken")), "damaged");
@@ -893,7 +1014,16 @@ mod tests {
         let mut reader = png::Decoder::new(Cursor::new(encoded)).read_info().unwrap();
         let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
         reader.next_frame(&mut pixels).unwrap();
-        assert_eq!(&pixels[..6], &[255, 255, 255, 0, 255, 255]);
+        assert_eq!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .take(3)
+                .map(|p| p[3])
+                .collect::<Vec<_>>(),
+            [255, 0, 255]
+        );
     }
     #[test]
     fn svg_expanded_geometry_and_intermediate_layers_are_bounded() {

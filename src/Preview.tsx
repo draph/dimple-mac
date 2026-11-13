@@ -24,6 +24,10 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
   const y = 548 - height / 2 + params.offsetY * 2;
   const edgeOffset = engravingOffset(size) * 1024 / size;
   ctx.drawImage(template, 0, 0, 1024, 1024);
+  if (params.effect === "original") {
+    ctx.drawImage(badge, x, y, width, height);
+    return;
+  }
   const mask = (offset: number) => ink.drawImage(badge, x, y + offset, width, height);
   const edge = (offset: number, color: string) => {
     ink.clearRect(0, 0, 1024, 1024);

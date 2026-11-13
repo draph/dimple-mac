@@ -1,6 +1,6 @@
 import type { RenderParams } from "./contracts.ts";
 
-export const defaultParams: RenderParams = { scale: 1, offsetX: 0, offsetY: 0, theme: "native" };
+export const defaultParams: RenderParams = { effect: "engraved", scale: 1, offsetX: 0, offsetY: 0, theme: "native" };
 export const themes = [
   ["native", "native"], ["red", "#EF4444"], ["orange", "#F97316"], ["yellow", "#EAB308"],
   ["green", "#22C55E"], ["purple", "#A855F7"], ["gray", "#808080"],
@@ -14,7 +14,7 @@ export function engravingOffset(size: number): number {
   return engravingOffsets[size as (typeof outputSizes)[number]];
 }
 export function validParams(p: RenderParams): boolean {
-  return Number.isFinite(p.scale) && p.scale >= .25 && p.scale <= 2
+  return (p.effect === "engraved" || p.effect === "original") && Number.isFinite(p.scale) && p.scale >= .25 && p.scale <= 2
     && [p.offsetX, p.offsetY].every(v => Number.isFinite(v) && v >= -100 && v <= 100)
     && (p.theme === "native" || /^#[\da-f]{6}$/i.test(p.theme));
 }

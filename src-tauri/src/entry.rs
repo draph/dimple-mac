@@ -54,6 +54,7 @@ struct Badge {
     width: u32,
     height: u32,
     opaque: bool,
+    effects: Vec<operation::Effect>,
     text: Option<String>,
 }
 impl Default for Badge {
@@ -63,6 +64,7 @@ impl Default for Badge {
             width: 384,
             height: 256,
             opaque: false,
+            effects: vec![operation::Effect::Engraved],
             text: None,
         }
     }
@@ -238,7 +240,11 @@ fn receive_paths<R: tauri::Runtime>(
                 .as_ref()
                 .ok()
                 .and_then(|p| p.extension())
-                .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"));
+                .is_some_and(|e| {
+                    ["png", "svg", "jpg", "jpeg"]
+                        .iter()
+                        .any(|ext| e.eq_ignore_ascii_case(ext))
+                });
         s.importing = s.native_importing || s.text_pending;
         s.request += 1;
         let revision = s.request;
@@ -362,9 +368,11 @@ fn check_paths_current(
     current: impl Fn() -> bool,
 ) -> Result<Vec<InputItem>, &'static str> {
     let badge_candidate = paths.len() == 1
-        && paths[0]
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"));
+        && paths[0].extension().is_some_and(|e| {
+            ["png", "svg", "jpg", "jpeg"]
+                .iter()
+                .any(|ext| e.eq_ignore_ascii_case(ext))
+        });
     finder_check_result(badge_candidate, check_native_paths_current(paths, current))
 }
 fn finder_check_result(
@@ -448,11 +456,22 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
                 s.badge_error = Some(error);
             } else if let Some(mask) = item.mask {
                 cancel_text(s);
+                let effects = if mask.opaque {
+                    vec![operation::Effect::Original]
+                } else {
+                    vec![operation::Effect::Engraved, operation::Effect::Original]
+                };
+                s.params.effect = if effects.contains(&s.params.effect) {
+                    s.params.effect
+                } else {
+                    effects[0]
+                };
                 s.badge = Badge {
                     id: targets::next_id("badge"),
                     width: mask.width,
                     height: mask.height,
                     opaque: mask.opaque,
+                    effects,
                     text: None,
                 };
                 s.mask = Some(std::sync::Arc::new(mask));
@@ -642,7 +661,7 @@ pub fn choose_badge<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
     }
     app.dialog()
         .file()
-        .add_filter("PNG / SVG", &["png", "svg"])
+        .add_filter("PNG / SVG / JPEG", &["png", "svg", "jpg", "jpeg"])
         .pick_file(move |file| {
             if let Some(file) = file {
                 match file.into_path() {
@@ -697,11 +716,13 @@ pub fn select_badge<R: tauri::Runtime>(
     let mask = builtin.map(crate::assets::svg_mask).transpose()?;
     accept_badge_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
     if let Some(mask) = mask {
+        s.params.effect = operation::Effect::Engraved;
         s.badge = Badge {
             id: badge_id,
             width: mask.width,
             height: mask.height,
             opaque: false,
+            effects: vec![operation::Effect::Engraved],
             text: None,
         };
         s.mask = Some(std::sync::Arc::new(mask));
@@ -776,11 +797,13 @@ fn finish_text(s: &mut Snapshot, request: u64, result: Result<targets::Checked, 
             .ok_or_else(|| AppError::reason("text_error", "render"))
     }) {
         Ok(mask) => {
+            s.params.effect = operation::Effect::Engraved;
             s.badge = Badge {
                 id: targets::next_id("text"),
                 width: mask.width,
                 height: mask.height,
                 opaque: false,
+                effects: vec![operation::Effect::Engraved],
                 text: s.text.clone(),
             };
             s.mask = Some(std::sync::Arc::new(mask));
@@ -1060,7 +1083,10 @@ fn begin_prepare(
     if let operation::Action::Apply {
         badge_id, params, ..
     } = &input.action
-        && (s.badge_error.is_some() || *badge_id != s.badge.id || *params != s.params)
+        && (s.badge_error.is_some()
+            || *badge_id != s.badge.id
+            || *params != s.params
+            || !s.badge.effects.contains(&params.effect))
     {
         return Err(AppError::reason("invalid_input", "asset"));
     }
@@ -1349,6 +1375,9 @@ pub fn set_render_params<R: tauri::Runtime>(
     params.validate()?;
     let inbox = app.state::<Inbox>();
     let mut s = inbox.0.lock().unwrap();
+    if !s.badge.effects.contains(&params.effect) {
+        return Err(AppError::reason("invalid_input", "params"));
+    }
     accept_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
     s.params = params;
     commit_update(&app, s);
@@ -1847,7 +1876,7 @@ mod tests {
                 },
             )
         };
-        let params = json!({"scale":2.0,"offsetX":-100.0,"offsetY":100.0,"theme":"#EF4444"});
+        let params = json!({"effect":"engraved","scale":2.0,"offsetX":-100.0,"offsetY":100.0,"theme":"#EF4444"});
         assert!(set(0, params.clone()).is_ok());
         let snapshot = super::session(app.handle()).0;
         assert_eq!(serde_json::to_value(&snapshot.params).unwrap(), params);
@@ -3405,6 +3434,103 @@ mod tests {
                 .join("../tests/fixtures/badges/geometric-cross.svg"),
         )
         .unwrap()
+    }
+    #[test]
+    fn image_imports_choose_compatible_effects_atomically_and_failures_preserve_them() {
+        use crate::operation::Effect;
+        let mut s = super::Snapshot::default();
+        let import = |s: &mut super::Snapshot, opaque| {
+            let mut mask = imported_mask();
+            mask.opaque = opaque;
+            super::accept(
+                s,
+                "drop",
+                vec![super::InputItem {
+                    kind: "badge",
+                    mask: Some(mask),
+                    ..Default::default()
+                }],
+            );
+        };
+        import(&mut s, false);
+        assert_eq!(s.params.effect, Effect::Engraved);
+        assert_eq!(s.badge.effects, [Effect::Engraved, Effect::Original]);
+        import(&mut s, true);
+        assert_eq!(s.params.effect, Effect::Original);
+        assert_eq!(s.badge.effects, [Effect::Original]);
+        import(&mut s, false);
+        assert_eq!(s.params.effect, Effect::Original);
+        let id = s.badge.id.clone();
+        super::accept(
+            &mut s,
+            "drop",
+            vec![super::InputItem {
+                kind: "badge",
+                error: Some(crate::localization::AppError::reason(
+                    "asset_error",
+                    "damaged",
+                )),
+                ..Default::default()
+            }],
+        );
+        assert_eq!(s.badge.id, id);
+        assert_eq!(s.params.effect, Effect::Original);
+        assert!(s.badge_error.is_some());
+    }
+    #[test]
+    fn incompatible_effects_are_rejected_without_changing_the_edit_revision() {
+        use crate::operation::Effect;
+        use tauri::Manager;
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(
+                super::Snapshot::default(),
+            )))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let mut params = crate::operation::Params::default();
+        params.effect = Effect::Original;
+        assert!(super::set_render_params(app.handle().clone(), 0, None, params).is_err());
+        assert_eq!(super::get_entry(app.handle().clone()).edit_revision, 0);
+        {
+            let inbox = app.state::<super::Inbox>();
+            let mut s = inbox.0.lock().unwrap();
+            s.badge.effects = vec![Effect::Original];
+            s.params.effect = Effect::Original;
+        }
+        assert!(
+            super::set_render_params(
+                app.handle().clone(),
+                0,
+                None,
+                crate::operation::Params::default()
+            )
+            .is_err()
+        );
+        assert_eq!(super::get_entry(app.handle().clone()).edit_revision, 0);
+        super::select_badge(app.handle().clone(), 0, None, "code".into()).unwrap();
+        assert_eq!(
+            super::get_entry(app.handle().clone()).params.effect,
+            Effect::Engraved
+        );
+    }
+    #[test]
+    fn native_jpeg_intake_uses_the_same_import_and_effect_path() {
+        for ext in ["jpg", "JPEG"] {
+            let path = std::env::temp_dir()
+                .join(crate::targets::next_id("jpeg-entry"))
+                .with_extension(ext);
+            std::fs::write(
+                &path,
+                include_bytes!("../../tests/fixtures/badges/color/rgb.jpg"),
+            )
+            .unwrap();
+            let checked = super::check_paths(vec![path.clone()]);
+            std::fs::remove_file(path).unwrap();
+            let mut s = super::Snapshot::default();
+            super::accept(&mut s, "finder", checked.unwrap());
+            assert_eq!(s.params.effect, crate::operation::Effect::Original);
+            assert!(s.badge.opaque);
+        }
     }
     #[test]
     fn finder_import_timeout_preserves_manual_and_automatic_context() {

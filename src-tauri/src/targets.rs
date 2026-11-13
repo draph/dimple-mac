@@ -90,10 +90,11 @@ fn inspect(path: PathBuf) -> Result<Target, AppError> {
     let metadata = fs::metadata(&actual).map_err(io_error)?;
     if !metadata.is_dir() {
         return Err(failure(
-            if path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"))
-            {
+            if path.extension().is_some_and(|e| {
+                ["png", "svg", "jpg", "jpeg"]
+                    .iter()
+                    .any(|ext| e.eq_ignore_ascii_case(ext))
+            }) {
                 "badge"
             } else {
                 "type"
@@ -301,6 +302,8 @@ pub fn check_cancellable(
     command.arg("--target-check-worker");
     check_process(command, input, Duration::from_secs(10), current)
 }
+// A 1024² RGBA PNG needs up to ~5.6 MiB as Base64, plus bounded JSON metadata.
+const WORKER_OUTPUT_LIMIT: usize = 6 * 1024 * 1024;
 fn check_process(
     mut command: Command,
     input: Vec<u8>,
@@ -319,7 +322,7 @@ fn check_process(
     let reader = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         stdout
-            .take(4 * 1024 * 1024 + 1)
+            .take(WORKER_OUTPUT_LIMIT as u64 + 1)
             .read_to_end(&mut bytes)
             .map(|_| bytes)
     });
@@ -343,7 +346,7 @@ fn check_process(
         return Err(failure("check"));
     }
     let bytes = received.map_err(|_| failure("check"))?.map_err(io_error)?;
-    if bytes.len() > 4 * 1024 * 1024 {
+    if bytes.len() > WORKER_OUTPUT_LIMIT {
         return Err(failure("budget"));
     }
     serde_json::from_slice(&bytes).map_err(|_| failure("check"))?
@@ -377,6 +380,42 @@ mod tests {
         let p = std::env::temp_dir().join(next_id("test"));
         fs::create_dir(&p).unwrap();
         Temp(fs::canonicalize(p).unwrap())
+    }
+    #[test]
+    fn parent_reader_accepts_color_payloads_and_keeps_a_bounded_limit() {
+        let response = |len| {
+            serde_json::to_vec(&Ok::<_, AppError>(Checked {
+                mask: Some(crate::assets::Mask {
+                    png: "A".repeat(len),
+                    width: 1024,
+                    height: 1024,
+                    original_width: 1024,
+                    original_height: 1024,
+                    bounds: [0, 0, 1024, 1024],
+                    opaque: false,
+                }),
+                ..Default::default()
+            }))
+            .unwrap()
+        };
+        let input = response(5 * 1024 * 1024);
+        let result = check_process(
+            Command::new("/bin/cat"),
+            input,
+            Duration::from_secs(10),
+            || true,
+        )
+        .unwrap();
+        assert_eq!(result.mask.unwrap().png.len(), 5 * 1024 * 1024);
+        assert!(
+            check_process(
+                Command::new("/bin/cat"),
+                response(WORKER_OUTPUT_LIMIT),
+                Duration::from_secs(10),
+                || true
+            )
+            .is_err()
+        );
     }
     #[test]
     fn timed_out_readers_are_killed_and_reaped() {
