@@ -5,6 +5,7 @@ import { errorMessage, translate, type Locale } from "./i18n";
 import { captureShortcut, displayShortcut, type ShortcutStatus, type ShortcutSettings as Value } from "./shortcut";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { LanguageSettings } from "./LanguageSettings";
+import { AboutSettings } from "./AboutSettings";
 import type { AppearanceController } from "./appearance";
 import type { LanguagePreference, LanguageStatus } from "./language";
 
@@ -71,7 +72,7 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, appea
     if (!open) void stopCapture().catch(setFailure);
   }, [open]);
   useEffect(() => {
-    if (open) { section.current?.scrollIntoView({ block: "start" }); section.current?.focus(); }
+    if (open) section.current?.focus({ preventScroll: true });
   }, [open]);
   useEffect(() => {
     const listener = listen<string>("shortcut-captured", event => {
@@ -123,18 +124,13 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, appea
     <button className="primary" disabled={saving || capturing || status.uncertain.length > 0} onClick={() => void save()}>{t("settings.save")}</button>
     </div>
     <p className="muted settings-active" role="status">{translate(locale, "settings.active", { shortcut: status.active.length ? status.active.map(displayShortcut).join(" / ") : t("settings.none") })}</p>
-    <p className="muted settings-hint"><span aria-hidden="true">ⓘ</span>{t("settings.hint")}</p>
+    <p className="muted settings-hint"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6m-5 3h4M9 15c0-2-3-3-3-7a6 6 0 0 1 12 0c0 4-3 5-3 7Z" /></svg>{t("settings.hint")}</p>
     {status.uncertain.length > 0 && <p role="alert">{translate(locale, "settings.uncertain", { shortcut: status.uncertain.map(displayShortcut).join(" / ") })}</p>}
     {status.error != null && <p role="alert" className="error">{errorMessage(locale, status.error)}</p>}
     {failure != null && <p role="alert" className="error">{errorMessage(locale, failure)}</p>}
     {saved && <p role="status">{t("settings.saved")}</p>}
     </section>
-    <section className="settings-card about" aria-labelledby="about-title">
-      <span className="settings-icon about-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v.1" /></svg></span>
-      <div><p id="about-title" className="settings-card-title">{translate(locale, "about.version", { version })}</p></div>
-      <button type="button" className="check-updates" disabled aria-describedby="update-unavailable">{t("about.update")}</button>
-      <span id="update-unavailable" className="sr-only">{t("about.unavailable")}</span>
-    </section>
+    <AboutSettings locale={locale} version={version} />
     </div>
     <div className="settings-footer"><button className="quiet" disabled={saving || capturing} onClick={() => { void invoke("quit_app").catch(setFailure); }}>{t("menu.quit")}</button></div>
   </section>;

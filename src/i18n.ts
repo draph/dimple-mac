@@ -34,6 +34,7 @@ export function errorMessage(locale: Locale, error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error && "params" in error && typeof error.params === "object" && error.params !== null && !Array.isArray(error.params)) {
     const params = error.params as Record<string, unknown>;
     const reason = params.reason;
+    if (error.code === "about_error" && reason === "open") return translate(locale, "about.openFailed");
     if (error.code === "shortcut_error" && typeof reason === "string" && ["invalid", "register", "unregister", "save", "rollback", "damaged", "restart", "capture"].includes(reason)) return translate(locale, `settings.error.${reason}`);
     if (error.code === "language_error" && typeof reason === "string" && ["invalid", "damaged", "save", "apply"].includes(reason)) return translate(locale, `language.error.${reason}`);
     if (error.code === "text_error" && typeof reason === "string" && ["budget", "line", "empty", "length", "control", "missing", "render", "timeout"].includes(reason)) return translate(locale, `text.error.${reason}`);

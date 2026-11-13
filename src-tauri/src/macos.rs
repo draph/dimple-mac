@@ -4,6 +4,18 @@ use objc2_app_kit::{NSApplication, NSPasteboard, NSView, NSWorkspace};
 use objc2_foundation::{MainThreadMarker, NSArray, NSObject, NSString, NSURL};
 use std::{path::PathBuf, sync::OnceLock};
 static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+#[tauri::command]
+pub fn open_project_github() -> Result<(), crate::localization::AppError> {
+    let url = NSURL::URLWithString(&NSString::from_str("https://github.com/draph/dimple-mac"))
+        .expect("Project URL must be valid");
+    if NSWorkspace::sharedWorkspace().openURL(&url) {
+        Ok(())
+    } else {
+        Err(crate::localization::AppError::reason("about_error", "open"))
+    }
+}
+
 pub fn finder_is_frontmost() -> bool {
     NSWorkspace::sharedWorkspace()
         .frontmostApplication()

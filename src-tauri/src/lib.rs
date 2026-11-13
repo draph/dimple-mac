@@ -180,6 +180,7 @@ pub fn run() {
             settings::open_settings,
             settings::close_settings,
             quit_app,
+            macos::open_project_github,
             entry::get_entry,
             entry::begin_edit,
             entry::set_render_params,

@@ -33,6 +33,13 @@ test("missing Chinese messages fall back to English and unknown keys stay privat
   }
 });
 
+test("GitHub open failures use localized messages without exposing native details", () => {
+  for (const locale of ["en", "zh-Hans"] as const) {
+    assert.equal(errorMessage(locale, { code: "about_error", params: { reason: "open" } }), translate(locale, "about.openFailed"));
+    assert.equal(errorMessage(locale, { code: "about_error", params: { reason: "/private/path" } }), translate(locale, "error.generic"));
+  }
+});
+
 test("only registered structured errors produce specific messages", () => {
   for (const locale of ["en", "zh-Hans"] as const) {
     assert.equal(errorMessage(locale, { code: "native_connection_failed", params: {} }),
