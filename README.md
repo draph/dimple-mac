@@ -17,7 +17,7 @@ Dimple is an independently maintained GUI project inspired by [lgarron/folderify
 - Preview changes and optionally adjust scale, position, and folder color.
 - Open the panel from the menu bar, a global shortcut, or a Finder context-menu service; drag folders or badge files onto the panel or menu bar.
 - Restore the system's default folder icon after confirmation.
-- Work offline, with no account, telemetry, uploads, or runtime network dependency.
+- Work offline, with no account, telemetry, or uploads; only a user-initiated update check contacts GitHub Releases.
 - Use Simplified Chinese or English, with keyboard and VoiceOver support.
 
 ## Installation
@@ -48,7 +48,7 @@ The main window opens on launch and stays open when it loses focus or an operati
 
 Open **Settings** from the menu bar or the settings icon in the upper-right corner of the panel. Settings stay unavailable while preparing, confirming, executing, or waiting for an unresolved result. Open them again after the operation finishes. Click **Back** to return to your preserved edit. Icon and text badges have separate tabs; switching tabs keeps the current badge until you select an icon or enter text. The bottom of Settings includes a **Quit** button; quitting from the menu bar remains available. Enable or disable the global shortcut, click the recording field (or press Enter), press a combination including **⌥ Option**, **⌃ Control**, or **⌘ Command**, press **Esc** to end recording, then **Save**. The default is **⌥F**. Recording captures keys without invoking the app's menu actions. Conflicts with another exclusive Carbon registration and save failures show an error and the currently active combinations; a failed rollback can require quitting and reopening the app before another change. The menu bar remains available. macOS can still share combinations registered through legacy nonexclusive APIs or other shortcut mechanisms; not every system-reserved shortcut can be detected.
 
-The compact About section in Settings shows Dimple, the installed package version, and a note that updates are currently unavailable.
+The compact About section in Settings shows Dimple and the installed package version. **Check for updates** asks the public GitHub Releases API for the highest published version and, when newer, shows it with a **Download** button that opens the release page in your browser. It only runs when you click it; it never downloads or installs updates automatically. The menu bar icon menu has the same entry and opens this section before running the check.
 
 In **Settings → Appearance**, choose **System**, **Dark**, or **Light**. System is the default and follows macOS changes while the app is open. Changes apply immediately and are saved automatically in the app’s local WebView storage; no shortcut save is needed. Dark mode uses neutral black and gray surfaces with blue accents; appearance does not change folder previews or applied icons. To reset this preference, select **System**.
 
@@ -83,7 +83,8 @@ If a system write takes longer than expected, wait for its result; a timeout doe
 - The writing design uses macOS file coordination and identity checks. Programs that bypass coordination can still replace a path after the final check; this is not a mandatory lock against every process.
 - Previewing and adjusting do not write to targets. Applying or restoring changes folder icon metadata, not folder contents.
 - Target paths, imported artwork, and editing drafts are not saved across app launches. Shortcut, appearance, and language preferences are saved. Logs must not include full private paths, artwork contents, or credentials.
-- There is no standalone PNG/ICNS export, edit history, icon backup/undo, preset manager, automatic updater, or plugin marketplace.
+- **Check for updates** is manual and requests the public GitHub Releases API each time; it opens the release page but never downloads or installs anything. The repository and releases must be public. After manually installing a new ad-hoc-signed build, macOS may ask for Finder automation permission again.
+- There is no standalone PNG/ICNS export, edit history, icon backup/undo, preset manager, automatic in-app download/install, or plugin marketplace.
 
 ## Language
 

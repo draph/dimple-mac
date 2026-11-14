@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { errorMessage, translate, type Locale } from "./i18n";
@@ -16,6 +16,8 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, onClo
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const [pendingUpdateCheck, setPendingUpdateCheck] = useState(false);
+  const updateSession = useRef(0);
   const input = useRef<HTMLInputElement>(null);
   const capture = useRef(false);
   const captureEpoch = useRef(0);
@@ -61,6 +63,30 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, onClo
     finally { setSaving(false); }
   };
   const open = !!status?.open && !blocked;
+  const consumeUpdateCheck = useCallback(() => {
+    const session = updateSession.current;
+    void invoke<boolean>("take_update_check")
+      .then(pending => {
+        if (pending && session === updateSession.current) setPendingUpdateCheck(true);
+      })
+      .catch(() => {});
+  }, []);
+  const clearUpdateCheck = useCallback(() => setPendingUpdateCheck(false), []);
+  useEffect(() => {
+    let active = true;
+    const listener = listen("update-check", () => {
+      if (active) consumeUpdateCheck();
+    });
+    return () => { active = false; void listener.then(fn => fn()).catch(() => {}); };
+  }, [consumeUpdateCheck]);
+  useEffect(() => {
+    if (!open) {
+      updateSession.current++;
+      setPendingUpdateCheck(false);
+      return;
+    }
+    consumeUpdateCheck();
+  }, [open, consumeUpdateCheck]);
   useEffect(() => {
     if (blocked) {
       if (status?.open) void invoke("close_settings").catch(setFailure);
@@ -131,7 +157,7 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, onClo
     {failure != null && <p role="alert" className="error">{errorMessage(locale, failure)}</p>}
     {saved && <p role="status">{t("settings.saved")}</p>}
     </section>
-    <AboutSettings locale={locale} version={version} />
+    <AboutSettings locale={locale} version={version} blocked={blocked} checkRequest={pendingUpdateCheck} onCheckRequestHandled={clearUpdateCheck} />
     </div>
     <div className="settings-footer"><button className="quiet" disabled={saving || capturing} onClick={() => { void invoke("quit_app").catch(setFailure); }}>{t("menu.quit")}</button></div>
   </section>;

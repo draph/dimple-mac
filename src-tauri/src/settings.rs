@@ -1,4 +1,5 @@
 use crate::localization::AppError;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{path::Path, sync::Mutex};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
@@ -30,6 +31,8 @@ pub struct Status {
 }
 #[derive(Default)]
 pub struct Settings(Mutex<Status>);
+#[derive(Default)]
+pub struct UpdateCheck(AtomicBool);
 fn error(reason: &str) -> AppError {
     AppError::reason("shortcut_error", reason)
 }
@@ -230,6 +233,9 @@ pub(crate) fn capturing<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
         .is_some_and(|s| s.0.lock().unwrap().capturing)
 }
 pub(crate) fn set_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, open: bool) {
+    if !open {
+        clear_update_check(app);
+    }
     if let Some(state) = app.try_state::<Settings>() {
         let mut s = state.0.lock().unwrap();
         if s.open != open {
@@ -239,8 +245,33 @@ pub(crate) fn set_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, open: bool)
         }
     }
 }
-pub fn open<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    crate::entry::open_settings(app);
+fn request_update_check<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(state) = app.try_state::<UpdateCheck>() {
+        state.0.store(true, Ordering::SeqCst);
+    }
+}
+fn clear_update_check<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(state) = app.try_state::<UpdateCheck>() {
+        state.0.store(false, Ordering::SeqCst);
+    }
+}
+#[tauri::command]
+pub fn take_update_check<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool {
+    app.try_state::<UpdateCheck>()
+        .is_some_and(|state| state.0.swap(false, Ordering::SeqCst))
+}
+pub fn open<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    crate::entry::open_settings(app)
+}
+pub fn open_for_update<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    // Arm the one-shot request before opening settings: the frontend consumes it as soon as the
+    // settings-open event arrives.
+    request_update_check(app);
+    if open(app) {
+        let _ = app.emit("update-check", ());
+    } else {
+        clear_update_check(app);
+    }
 }
 #[tauri::command]
 pub fn get_shortcut_settings<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Status {
@@ -268,7 +299,8 @@ pub async fn set_shortcut_capture(app: tauri::AppHandle, capturing: bool) -> Res
     rx.recv().await.ok_or_else(|| error("capture"))?
 }
 #[tauri::command]
-pub fn close_settings(app: tauri::AppHandle) {
+pub fn close_settings<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    clear_update_check(&app);
     app.state::<Settings>().0.lock().unwrap().open = false;
 }
 #[tauri::command]

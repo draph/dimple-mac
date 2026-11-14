@@ -15,6 +15,10 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const appearance = createAppearance(() => localStorage, matchMedia('(prefers-color-scheme: dark)'), document.documentElement);
 const status = { settings: { enabled: true, shortcut: 'alt+KeyF' }, active: ['alt+KeyF'], uncertain: [], saved: false, error: null, open: false, capturing: false };
 let setBlocked, setLocale, setVersion, visible = false, restored = 0, delay = false, release;
+let takeUpdate = false;
+let opened = 'unset';
+let fetchFails = false;
+let releases = [{ tag_name: 'v2.3.4', draft: false, prerelease: false }];
 mockIPC(async (cmd, args) => {
   if (cmd === 'get_shortcut_settings') {
     const value = structuredClone(status);
@@ -23,11 +27,17 @@ mockIPC(async (cmd, args) => {
   }
   if (cmd === 'close_settings') status.open = false;
   if (cmd === 'set_shortcut_capture') status.capturing = !!args.capturing;
+  if (cmd === 'take_update_check') { const value = takeUpdate; takeUpdate = false; return value; }
+  if (cmd === 'open_releases') opened = args.tag;
 }, { shouldMockEvents: true });
+globalThis.fetch = async () => {
+  if (fetchFails) throw new Error('offline');
+  return new Response(JSON.stringify(releases), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
 function Harness() {
   const [blocked, update] = useState(false);
   const [locale, updateLocale] = useState('en');
-  const [version, updateVersion] = useState('9.8.7-test');
+  const [version, updateVersion] = useState('9.8.7');
   setBlocked = update;
   setLocale = updateLocale; setVersion = updateVersion;
   return React.createElement(ShortcutSettings, { locale, version, blocked, onOpenChange: open => { visible = open; }, onClosed: () => { restored++; },
@@ -40,24 +50,83 @@ const open = async (late = false) => {
   status.open = true; delay = late;
   await act(async () => { await emit('shortcut-settings'); });
 };
+const settle = async () => {
+  await act(async () => { await new Promise(done => setTimeout(done, 0)); });
+};
+const about = () => document.querySelector('.about');
+const checkButton = () => about()?.querySelector('.check-updates');
 try {
   await act(async () => root.render(React.createElement(Harness)));
   await open();
   check(visible, 'Idle settings must open');
-  for (const [locale, title, version, update, description] of [
-    ['en', 'About', 'Version 9.8.7-test', 'Check for updates', 'Updates are currently unavailable.'],
-    ['zh-Hans', '关于', '版本 9.8.7-test', '检查更新', '目前无法检查更新。'],
+  for (const [locale, title, version, checkText] of [
+    ['en', 'About', 'Version 9.8.7', 'Check for updates'],
+    ['zh-Hans', '关于', '版本 9.8.7', '检查更新'],
   ]) {
     await act(async () => setLocale(locale));
-    const about = document.querySelector('.about');
-    const button = about.querySelector('button');
-    check(about.getAttribute('aria-labelledby') === 'about-title' && about.querySelector('h2').textContent === title, 'About must have a localized accessible heading');
-    check(about.textContent.includes(version), 'About must show the supplied version');
-    check(button.disabled && button.textContent === update, 'Update must be natively disabled and localized');
-    check(document.getElementById(button.getAttribute('aria-describedby'))?.textContent === description, 'Update must describe its unavailability');
+    const section = about();
+    const button = checkButton();
+    check(section.getAttribute('aria-labelledby') === 'about-title' && section.querySelector('h2').textContent === title, 'About must have a localized accessible heading');
+    check(section.textContent.includes(version), 'About must show the supplied version');
+    check(!button.disabled && button.textContent === checkText, 'Update must be enabled and localized');
+    check(!button.hasAttribute('aria-describedby'), 'Update must not describe itself as unavailable');
+    check(!section.querySelector('.about-update'), 'Idle update state must not render a result');
   }
   await act(async () => { setLocale('en'); setVersion('2.3.4'); });
-  check(document.querySelector('.about').textContent.includes('Version 2.3.4'), 'Version changes must render from props');
+  check(about().textContent.includes('Version 2.3.4'), 'Version changes must render from props');
+
+  releases = [{ tag_name: 'v2.3.4', draft: false, prerelease: false }];
+  await act(async () => { checkButton().click(); });
+  await settle();
+  check(about().querySelector('.about-update')?.textContent.includes("You're up to date (version 2.3.4)."), 'Equal versions must report up to date');
+  check(!checkButton().disabled, 'Checking must re-enable the button');
+
+  releases = [{ tag_name: 'v2.4.0', draft: false, prerelease: false }];
+  await act(async () => { checkButton().click(); });
+  await settle();
+  const available = about().querySelector('.about-update');
+  check(available?.textContent.includes('Version 2.4.0 is available (you have 2.3.4).'), 'A newer release must be announced');
+  const download = available?.querySelector('button');
+  check(download?.textContent.includes('Download'), 'A newer release must expose a download button');
+  opened = 'unset';
+  await act(async () => { download?.click(); });
+  check(opened === 'v2.4.0', 'Download must open the selected release tag');
+
+  releases = [{ tag_name: 'v2.5.0', draft: false, prerelease: true }];
+  await act(async () => { checkButton().click(); });
+  await settle();
+  check(about().querySelector('.about-update')?.textContent.includes('pre-release'), 'Prereleases must be labeled');
+
+  releases = [];
+  await act(async () => { checkButton().click(); });
+  await settle();
+  check(about().textContent.includes('No published releases found.'), 'An empty release list must be explained');
+  opened = 'unset';
+  await act(async () => { about().querySelector('.about-update button').click(); });
+  check(opened === null, 'The fallback must open the releases list');
+
+  fetchFails = true;
+  await act(async () => { checkButton().click(); });
+  await settle();
+  check(about().querySelector('[role="alert"]')?.textContent.includes('Could not check for updates'), 'Network failures must be reported');
+  opened = 'unset';
+  await act(async () => { about().querySelector('.about-update button').click(); });
+  check(opened === null, 'A failed check must offer the releases list');
+  fetchFails = false;
+
+  releases = [{ tag_name: 'v2.6.0', draft: false, prerelease: false }];
+  await act(async () => { checkButton().click(); });
+  await settle();
+  await act(async () => setLocale('zh-Hans'));
+  check(about().textContent.includes('发现新版本 2.6.0（当前 2.3.4）'), 'Update results must follow the current language');
+  await act(async () => setLocale('en'));
+
+  releases = [{ tag_name: 'v2.3.4', draft: false, prerelease: false }];
+  takeUpdate = true;
+  await act(async () => { await emit('update-check'); });
+  await settle();
+  check(about().textContent.includes("You're up to date (version 2.3.4)."), 'The menu entry must run the same check');
+
   await act(async () => setBlocked(true));
   check(!visible && !status.open, 'Starting an operation must close settings');
   check(restored === 0, 'Automatic closes must not restore focus');
@@ -79,7 +148,7 @@ try {
   await act(async () => setBlocked(false));
   await act(async () => release());
   check(!visible && !status.open, 'A late response must not reopen settings without a new request');
-  document.querySelector('#result').textContent = `PASS: ${assertions} settings gate and about assertions`;
+  document.querySelector('#result').textContent = `PASS: ${assertions} settings, about and update assertions`;
 } catch (error) {
   document.querySelector('#result').textContent = `FAIL: ${error.message}`;
   throw error;

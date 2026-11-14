@@ -7,13 +7,47 @@ static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 #[tauri::command]
 pub fn open_project_github() -> Result<(), crate::localization::AppError> {
-    let url = NSURL::URLWithString(&NSString::from_str("https://github.com/draph/dimple-mac"))
-        .expect("Project URL must be valid");
+    open_url("https://github.com/draph/dimple-mac")
+}
+
+fn open_url(value: &str) -> Result<(), crate::localization::AppError> {
+    let url = NSURL::URLWithString(&NSString::from_str(value))
+        .ok_or_else(|| crate::localization::AppError::reason("about_error", "open"))?;
     if NSWorkspace::sharedWorkspace().openURL(&url) {
         Ok(())
     } else {
         Err(crate::localization::AppError::reason("about_error", "open"))
     }
+}
+
+fn release_tag(value: &str) -> Option<&str> {
+    let body = value.strip_prefix('v').unwrap_or(value);
+    let mut parts = body.split('.');
+    for _ in 0..3 {
+        let part = parts.next()?;
+        if part.is_empty()
+            || part.len() > 10
+            || (part.len() > 1 && part.starts_with('0'))
+            || !part.bytes().all(|byte| byte.is_ascii_digit())
+            || part.parse::<u32>().is_err()
+        {
+            return None;
+        }
+    }
+    parts.next().is_none().then_some(value)
+}
+
+#[tauri::command]
+pub fn open_releases(tag: Option<String>) -> Result<(), crate::localization::AppError> {
+    let url = match tag {
+        Some(tag) => format!(
+            "https://github.com/draph/dimple-mac/releases/tag/{}",
+            release_tag(&tag)
+                .ok_or_else(|| crate::localization::AppError::reason("about_error", "open"))?
+        ),
+        None => "https://github.com/draph/dimple-mac/releases".to_owned(),
+    };
+    open_url(&url)
 }
 
 pub fn finder_is_frontmost() -> bool {
@@ -130,6 +164,27 @@ pub fn install(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> tauri::R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_tags_accept_only_plain_versions() {
+        for value in ["v1.0.0", "1.2.3", "4294967295.0.0"] {
+            assert_eq!(release_tag(value), Some(value));
+        }
+        for value in [
+            "",
+            "v",
+            "v1.0",
+            "1.2.3.4",
+            "v01.0.0",
+            "v1.0.0-beta",
+            "v1.0.0/..",
+            "4294967296.0.0",
+            "vv1.0.0",
+            " 1.0.0",
+        ] {
+            assert_eq!(release_tag(value), None, "{value}");
+        }
+    }
 
     #[test]
     fn native_file_urls_preserve_paths_and_report_each_invalid_item() {

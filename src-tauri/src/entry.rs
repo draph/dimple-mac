@@ -512,13 +512,15 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
 pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     crate::panel::show(app, None);
 }
-pub fn open_settings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+pub fn open_settings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     let inbox = app.state::<Inbox>();
     let s = inbox.0.lock().unwrap();
     // Serialize opening with operation updates so a late request cannot cover progress.
-    crate::settings::set_open(app, !s.preparing && !s.operation_locked());
+    let allowed = !s.preparing && !s.operation_locked();
+    crate::settings::set_open(app, allowed);
     drop(s);
     show(app);
+    allowed
 }
 pub fn wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     wake_from(app, crate::macos::finder_is_frontmost());
@@ -1769,6 +1771,52 @@ mod tests {
                 assert!(is_open(), "completed results allow an explicit new request");
             }
         }
+    }
+
+    #[test]
+    fn update_check_requests_open_settings_once_and_do_not_queue_during_operations() {
+        let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
+            .manage(super::Inbox::default())
+            .manage(crate::settings::Settings::default())
+            .manage(crate::settings::UpdateCheck::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let _window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let is_open = || {
+            serde_json::to_value(crate::settings::get_shortcut_settings(app.handle().clone()))
+                .unwrap()["open"]
+                == true
+        };
+        crate::settings::open_for_update(app.handle());
+        assert!(is_open());
+        assert!(crate::settings::take_update_check(app.handle().clone()));
+        assert!(
+            !crate::settings::take_update_check(app.handle().clone()),
+            "an update request must be consumed once"
+        );
+
+        super::update(app.handle(), |s| {
+            s.preparing = true;
+        });
+        crate::settings::open_for_update(app.handle());
+        assert!(!is_open());
+        assert!(
+            !crate::settings::take_update_check(app.handle().clone()),
+            "blocked update requests must not be queued"
+        );
+
+        super::update(app.handle(), |s| *s = super::Snapshot::default());
+        crate::settings::open_for_update(app.handle());
+        assert!(crate::settings::take_update_check(app.handle().clone()));
+        crate::settings::close_settings(app.handle().clone());
+        assert!(!is_open());
+        assert!(
+            !crate::settings::take_update_check(app.handle().clone()),
+            "closing settings must clear an unconsumed request"
+        );
     }
 
     #[test]
