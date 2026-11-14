@@ -121,7 +121,7 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 3v6m0 4v8M12 3v12m0 4v2M20 3v2m0 4v12M1 9h6m2 6h6m2-10h6" /></svg>{t("adjust.heading")}
     </button>
     <div ref={panel} id="adjustments-panel" className="adjustments" role="dialog" aria-labelledby="adjustments-heading" tabIndex={-1} hidden={!open}>
-    <div className="adjustments-header"><h2 id="adjustments-heading">{t("adjust.heading")}</h2><button className="quiet" aria-label={t("adjust.close")} onClick={() => close(true)}>×</button></div>
+    <div className="adjustments-header"><h2 id="adjustments-heading">{t("adjust.heading")}</h2></div>
     <fieldset disabled={disabled}>
       {([["scale", .25, 2, .01], ["offsetX", -100, 100, 1], ["offsetY", -100, 100, 1]] as const).map(([name, min, max, step]) =>
         <label className="adjustment-row" key={name}><span>{t(`adjust.${name}`)}</span>

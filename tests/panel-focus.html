@@ -66,6 +66,11 @@ try {
 
   await act(async () => document.querySelector('.adjustments-trigger').click());
   check(!document.querySelector('#adjustments-panel').hidden, 'Adjustments must open');
+  await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+  check(document.querySelector('#adjustments-panel').hidden, 'Escape must close adjustments');
+  check(document.activeElement === document.querySelector('.adjustments-trigger'), 'Escape must focus the adjustments trigger');
+  await act(async () => document.querySelector('.adjustments-trigger').click());
+  check(!document.querySelector('#adjustments-panel').hidden, 'Adjustments must reopen');
   await hide();
   check(document.querySelector('#adjustments-panel').hidden, 'Hiding the panel must close adjustments');
   await show();
