@@ -73,6 +73,10 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const imageBadge = !!entry && entry.badge.text == null && !icons.some(icon => icon.id === badgeId);
   const renderParams = localParams ?? entry?.params ?? defaultParams;
   const previewReady = !paramsPending && readyBadgeId === JSON.stringify([badgeId, renderParams]) && !!badgeSource && !entry?.badgeError && !entry?.importing && !textQueued;
+  const textBadgeError = entry?.badgeError?.code === "text_error" ? entry.badgeError : null;
+  const imageBadgeError = entry?.badgeError && entry.badgeError.code !== "text_error" ? entry.badgeError : null;
+  const errorTab = entry?.badgeError ? (entry.badgeError.code === "text_error" ? "text" : "image") : null;
+  const textErrorRecoverable = ["missing", "render", "timeout"].includes(String(textBadgeError?.params.reason ?? ""));
   useEffect(() => {
     let active = true;
     let url: string | undefined;
@@ -154,6 +158,10 @@ export default function App({ appearance }: { appearance: AppearanceController }
       if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error });
     });
   };
+  const recoverBadge = () => {
+    if (!entry || busy || textQueued || paramsPending) return;
+    command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId });
+  };
   const effectGuard = useRef(false);
   const changeEffect = async (effect: Effect) => {
     if (effectGuard.current || busy || paramsPending || !entry) return;
@@ -188,7 +196,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
     const frozenParams = { ...renderParams };
     const targetIds = entry.items.map(item => item.id);
     try {
-      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId, params: frozenParams, images: await exportImages(badgeSource!, frozenParams) };
+      const action: PrepareOperation["action"] = restore ? { type: "restore" } : { type: "apply", templateId: "big-sur-light-blue", badgeId, params: frozenParams, images: await exportImages(badgeSource!, frozenParams, entry.badge.opaque) };
       const latest = await refreshSession(generation);
       if (paramsVersion !== paramsEpoch.current || textVersion !== textEpoch.current || !sameDraft(draft, latest, restore)) return;
       const p = await invoke<PreparedOperation>("prepare_operation", { request: JSON.stringify({ revision: latest!.entry.revision, targetIds, action }) });
@@ -244,7 +252,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
       <div className="editor-scroll">
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
         <div className="target-overview">
-        <div className="target-preview"><Preview locale={locale} source={badgeSource} badgeId={badgeId} params={renderParams} onReady={onPreviewReady} /><span className="sr-only">{t("preview.heading")}</span></div>
+        <div className="target-preview"><Preview locale={locale} source={badgeSource} badgeId={badgeId} params={renderParams} cover={entry?.badge.opaque ?? false} onReady={onPreviewReady} /><span className="sr-only">{t("preview.heading")}</span></div>
         <div className="target-info">
         <h2 id="target-heading">{t("entry.heading")}</h2>
         {entry?.items.length ? <>
@@ -289,7 +297,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
               event.preventDefault();
               const next = badgeTabs[event.key === "Home" ? 0 : event.key === "End" ? badgeTabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + badgeTabs.length) % badgeTabs.length];
               setAdjustmentsOpen(false); setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
-            }}>{t(`badge.tab.${tab}`)}</button>)}
+            }}>{t(`badge.tab.${tab}`)}{errorTab === tab && <><span className="badge-tab-error" aria-hidden="true" /><span className="sr-only">{t("badge.hasError")}</span></>}</button>)}
         </div>
         {session && <Adjustments locale={locale} session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} open={adjustmentsOpen} onOpenChange={setAdjustmentsOpen} />}
         </div>
@@ -311,6 +319,11 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </div>
         <div id="badge-panel-text" role="tabpanel" aria-labelledby="badge-tab-text" hidden={badgeTab !== "text"}>
         {session && <TextBadge locale={locale} session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
+        {textBadgeError && <div className="badge-error">
+          <p role="alert" className="error">{errorMessage(locale, textBadgeError)}</p>
+          {textErrorRecoverable && <button disabled={busy || textQueued || paramsPending} onClick={recoverBadge}>{t("badge.recover")}</button>}
+        </div>}
+        {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         </div>
         <div id="badge-panel-image" className="image-badge" role="tabpanel" aria-labelledby="badge-tab-image" hidden={badgeTab !== "image"}>
           <div className="image-import">
@@ -324,11 +337,13 @@ export default function App({ appearance }: { appearance: AppearanceController }
             <label><input type="radio" name="badge-effect" value="original" checked={renderParams.effect === "original"} disabled={!entry?.badge.effects.includes("original")} onChange={() => void changeEffect("original")} />{t("badge.effect.original")}</label>
             <p className="muted">{t(renderParams.effect === "original" ? "badge.originalHint" : "badge.engravedHint")}</p>
           </fieldset>
+          {entry?.badge.opaque && <p id="badge-opaque-hint" role="status" className="muted">{t("badge.opaque")}</p>}
+          {imageBadgeError && <div className="badge-error">
+            <p role="alert" className="error">{errorMessage(locale, imageBadgeError)}</p>
+            <button disabled={busy || textQueued || paramsPending} onClick={recoverBadge}>{t("badge.recover")}</button>
+          </div>}
         </div>
-        {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}
-        {entry?.badge.opaque && <p id="badge-opaque-hint" role="status" className="muted">{t("badge.opaque")}</p>}
-        {entry?.badgeError && <><p role="alert" className="error">{errorMessage(locale, entry.badgeError)}</p><button disabled={busy || textQueued || paramsPending} onClick={() => command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId })}>{t("badge.recover")}</button></>}
       </section>
       </div>
       {(failure || progress || (prepared && !prepared.confirmationToken)) && <div className="operation-feedback">

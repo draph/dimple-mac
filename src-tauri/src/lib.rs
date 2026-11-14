@@ -20,6 +20,9 @@ use tauri::Manager;
 #[derive(Default)]
 struct TrayWake(std::sync::Mutex<Option<bool>>);
 
+// shortcut: update checking is not implemented; the tray item and settings button share this entry point.
+fn check_for_updates() {}
+
 fn wake_from_tray(app: &tauri::AppHandle) {
     let finder = app
         .state::<TrayWake>()
@@ -139,6 +142,9 @@ pub fn run() {
                     }
                     if e.id.as_ref() == "show" {
                         wake_from_tray(app);
+                    }
+                    if e.id.as_ref() == "check-updates" {
+                        check_for_updates();
                     }
                 })
                 .on_tray_icon_event(|tray, event| {

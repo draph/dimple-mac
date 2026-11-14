@@ -5,7 +5,9 @@ import { translate, type Locale } from "./i18n";
 import type { RenderParams } from "./contracts";
 import { engravingOffset, hsl, outputSizes, tint, validParams } from "./renderParams";
 
-function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: HTMLImageElement, params: RenderParams, layer: HTMLCanvasElement, size = 1024) {
+// An 8px inset keeps the folder rim and tab shadow visible; the radius follows the face corner.
+const face = { x: 50, y: 266, width: 924, height: 640, radius: 64 };
+function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: HTMLImageElement, params: RenderParams, layer: HTMLCanvasElement, size = 1024, cover = false) {
   const ctx = canvas.getContext("2d");
   if (!validParams(params)) throw new Error("E_PREVIEW_PARAMS");
   if (layer.width !== 1024) layer.width = layer.height = 1024;
@@ -17,15 +19,32 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
   ink.setTransform(1, 0, 0, 1, 0, 0); ink.globalAlpha = 1; ink.globalCompositeOperation = "source-over";
   ink.clearRect(0, 0, 1024, 1024);
   ctx.scale(size / 1024, size / 1024);
-  const factor = 384 * params.scale / Math.max(badge.naturalWidth, badge.naturalHeight);
-  const width = badge.naturalWidth * factor;
-  const height = badge.naturalHeight * factor;
-  const x = (1024 - width) / 2 + params.offsetX * 2;
-  const y = 548 - height / 2 + params.offsetY * 2;
+  let width: number, height: number, x: number, y: number;
+  if (cover && params.effect === "original") {
+    const factor = Math.max(face.width / badge.naturalWidth, face.height / badge.naturalHeight) * params.scale;
+    width = badge.naturalWidth * factor;
+    height = badge.naturalHeight * factor;
+    const panX = Math.abs(face.width - width) / 2, panY = Math.abs(face.height - height) / 2;
+    x = face.x + (face.width - width) / 2 + Math.max(-panX, Math.min(panX, params.offsetX * 2));
+    y = face.y + (face.height - height) / 2 + Math.max(-panY, Math.min(panY, params.offsetY * 2));
+  } else {
+    const factor = 384 * params.scale / Math.max(badge.naturalWidth, badge.naturalHeight);
+    width = badge.naturalWidth * factor;
+    height = badge.naturalHeight * factor;
+    x = (1024 - width) / 2 + params.offsetX * 2;
+    y = 548 - height / 2 + params.offsetY * 2;
+  }
   const edgeOffset = engravingOffset(size) * 1024 / size;
   ctx.drawImage(template, 0, 0, 1024, 1024);
   if (params.effect === "original") {
+    if (cover) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(face.x, face.y, face.width, face.height, face.radius);
+      ctx.clip();
+    }
     ctx.drawImage(badge, x, y, width, height);
+    if (cover) ctx.restore();
     return;
   }
   const mask = (offset: number) => ink.drawImage(badge, x, y + offset, width, height);
@@ -90,19 +109,19 @@ function colored(image: HTMLImageElement, theme: string): CanvasImageSource {
   tint(pixels.data, theme); ctx.putImageData(pixels, 0, 0);
   return canvas;
 }
-export async function exportImages(badgeUrl: string, params: RenderParams) {
+export async function exportImages(badgeUrl: string, params: RenderParams, cover = false) {
   if (!validParams(params)) throw new Error("E_PREVIEW_PARAMS");
   const badge = await load(badgeUrl);
   const images = [];
   const canvas = document.createElement("canvas"), layer = document.createElement("canvas");
   for (const size of outputSizes) {
-    render(canvas, colored(await template(size), params.theme), badge, params, layer, size);
+    render(canvas, colored(await template(size), params.theme), badge, params, layer, size, cover);
     images.push({ size, png: canvas.toDataURL("image/png").split(",")[1] });
   }
   return images;
 }
 
-export function Preview({ locale, source, badgeId, params, onReady }: { locale: Locale; source: string | null; badgeId: string; params: RenderParams; onReady: (key: string, ready: boolean) => void }) {
+export function Preview({ locale, source, badgeId, params, cover = false, onReady }: { locale: Locale; source: string | null; badgeId: string; params: RenderParams; cover?: boolean; onReady: (key: string, ready: boolean) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLCanvasElement | null>(null);
   const resources = useRef<{ badge: HTMLImageElement; template: CanvasImageSource; theme: string } | null>(null);
@@ -122,7 +141,7 @@ export function Preview({ locale, source, badgeId, params, onReady }: { locale: 
       try {
         if (r.theme !== next.params.theme) return;
         layer.current ??= document.createElement("canvas");
-        render(canvas.current, r.template, r.badge, next.params, layer.current);
+        render(canvas.current, r.template, r.badge, next.params, layer.current, 1024, cover);
         setStatus("ready"); next.onReady(next.key, true);
       } catch { setStatus("failed"); next.onReady(next.key, false); }
     });
@@ -155,7 +174,7 @@ export function Preview({ locale, source, badgeId, params, onReady }: { locale: 
     }).catch(() => { if (active) { setStatus("failed"); onReady(latest.current.key, false); } });
     return () => { active = false; resources.current = null; };
   }, [source, badgeId, params.theme, onReady]);
-  useEffect(() => { schedule.current(); }, [key]);
+  useEffect(() => { schedule.current(); }, [key, cover]);
   return <div className="preview">
     <canvas ref={canvas} hidden={status !== "ready"} role="img" aria-label={translate(locale, "preview.description")} />
     {status !== "ready" && <p role={status === "failed" ? "alert" : "status"}>{translate(locale, `preview.${status}`)}</p>}

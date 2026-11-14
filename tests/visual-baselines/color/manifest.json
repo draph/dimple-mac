@@ -66,49 +66,53 @@
       "theme": "native",
       "size": 16,
       "file": "color-jpeg-16.png",
-      "sha256": "317a6cf3b423456f6b1923c9be037ea1d24f1173dbbaf03ba24fa53775225fa5"
+      "sha256": "d48404e1823307413d9359042bd82e04c94cd25c394d27fd1dddfcf37c136851"
     },
     {
       "sample": "color-jpeg",
       "theme": "native",
       "size": 32,
       "file": "color-jpeg-32.png",
-      "sha256": "29f7b4b34fffbd9dbcc2dfd1e177668f85a7563604c6df98340a03c351587fba"
+      "sha256": "43d12b987a5ac4ab1d02bbae7f933adf4dac5322253a7168e19fce8e7374446e"
     },
     {
       "sample": "color-jpeg",
       "theme": "native",
       "size": 64,
       "file": "color-jpeg-64.png",
-      "sha256": "b0edeef9301c36762ac49621924c57631caf0a88421117b27e1d3c1e124b9e39"
+      "sha256": "14b59802a648a328cacaccf643626b723155339c4e166fb7d44545f29280d3e2"
     },
     {
       "sample": "color-jpeg",
       "theme": "native",
       "size": 128,
       "file": "color-jpeg-128.png",
-      "sha256": "fa100135e44db894c03086d77a485ea3fe4b266ff9435c42c4298b0589531883"
+      "sha256": "c0c1486cd58669d60765a084ea2cd1f75dda09c3894332c7d2bb3b3171538066"
     },
     {
       "sample": "color-jpeg",
       "theme": "native",
       "size": 256,
       "file": "color-jpeg-256.png",
-      "sha256": "eacf6369b3e3798f63cb85e3bef8a961fe6262b3b132439ec5d654c5a4022224"
+      "sha256": "b4fcffb10a01d70677680ce6ca8aa399ed31967ce9c0f5b7d3e662072e69e3c2"
     },
     {
       "sample": "color-jpeg",
       "theme": "native",
       "size": 512,
       "file": "color-jpeg-512.png",
-      "sha256": "0df2db05dfd2ca54237036ae7467b8c9a79ccc29220a8af80b5496dc458be643"
+      "sha256": "a170c27c1bc0c3147c0fbf757c80fb6673efc14b2b29c4ea1259e049f79af483"
     },
     {
       "sample": "color-jpeg",
       "theme": "native",
       "size": 1024,
       "file": "color-jpeg-1024.png",
-      "sha256": "e804032f748d7dd186053bdbde0a89b156b70fbd33587fb4764f3f41300e9659"
+      "sha256": "df55d12c435e3aa10db2577526e9c802fc7373a89804fac8498937456af0812f"
     }
-  ]
+  ],
+  "placement": {
+    "color-svg": "contain",
+    "color-jpeg": "cover"
+  }
 }

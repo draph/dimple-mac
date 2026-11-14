@@ -1,0 +1,78 @@
+<!doctype html><meta charset="utf-8"><title>Badge error scope regression</title>
+<p id="result" role="status">Running…</p><div id="root"></div>
+<script type="module">
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { mockIPC } from '@tauri-apps/api/mocks';
+import { emit } from '@tauri-apps/api/event';
+import App from '/src/App.tsx';
+import { defaultParams } from '/src/renderParams.ts';
+import { createAppearance } from '/src/appearance.ts';
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const png = btoa(String.fromCharCode(...new Uint8Array(await (await fetch('/tests/fixtures/badges/color/normalized/color-svg.png')).arrayBuffer())));
+const entry = {params:{...defaultParams},badge:{id:'text-old',width:80,height:48,opaque:false,effects:['engraved'],text:'old'},badgeError:{code:'text_error',params:{reason:'empty'}},importing:false,text:'',textCount:0,textPending:false,revision:1,editRevision:1,source:'text',items:[{id:'folder',path:'/tmp/isolated-test',actualPath:'/tmp/isolated-test',linked:false,kind:'directory',error:null}],issues:[],error:null,choosing:false,reading:false,checking:false,preparing:false};
+const session = {version:'test',locale:'en',entry,operation:{canStop:false,canRetry:false,canContinue:false,revision:1,prepared:null,progress:null}};
+mockIPC(async (cmd) => {
+  if (cmd === 'get_session') return structuredClone(session);
+  if (cmd === 'get_language') return {locale:'en',preference:'system',saved:false,revision:0};
+  if (cmd === 'get_badge_mask') return png;
+  if (cmd === 'panel_visible') return true;
+  if (cmd === 'get_shortcut_settings') return {settings:{enabled:false,shortcut:'alt+KeyF'},active:[],uncertain:[],saved:false,error:null,open:false,capturing:false};
+}, {shouldMockEvents:true});
+const root = createRoot(document.querySelector('#root'));
+const appearance = createAppearance(() => localStorage, matchMedia('(prefers-color-scheme: dark)'), document.documentElement);
+let count = 0;
+const check = (ok, message) => { if (!ok) throw Error(message); count++; };
+const settle = async condition => {
+  for (let i = 0; i < 60; i++) {
+    await act(async () => { await new Promise(requestAnimationFrame); });
+    if (condition()) return;
+  }
+  throw Error('UI did not settle');
+};
+const panel = id => document.querySelector(`#badge-panel-${id}`);
+const tab = id => document.querySelector(`#badge-tab-${id}`);
+try {
+  await act(async () => root.render(React.createElement(App, { appearance })));
+  await settle(() => document.querySelector('.primary'));
+  check(tab('text').querySelector('.badge-tab-error'), 'Text error must mark the text tab');
+  check(tab('text').textContent.includes('has an error'), 'The tab marker must be announced');
+  check(!tab('image').querySelector('.badge-tab-error'), 'Only the text tab is marked');
+  check(!document.querySelector('.badge-section > .error'), 'Text errors must not be global');
+  await act(async () => tab('text').click());
+  check(!panel('text').hidden, 'The text panel must open');
+  check(panel('text').querySelector('.badge-error')?.textContent.includes('at least one non-whitespace character'),
+    'The empty-text error must be shown in the text panel');
+  check(!panel('text').querySelector('.badge-error button'), 'Input validation must not offer recovery');
+  check(!document.querySelector('.badge-section > .error'), 'The error must not be shown outside the panel');
+  await act(async () => tab('icon').click());
+  check(panel('text').hidden, 'The text panel must hide');
+  check(tab('text').querySelector('.badge-tab-error'), 'The text error marker must persist');
+  entry.badgeError = {code:'text_error',params:{reason:'missing'}};
+  entry.revision++;
+  await act(async () => emit('entry-changed'));
+  await settle(() => panel('text').querySelector('.badge-error')?.textContent.includes('glyph is unavailable'));
+  await act(async () => tab('text').click());
+  check(panel('text').querySelector('.badge-error button')?.textContent.includes('Restore last valid badge'),
+    'Render failures must offer recovery');
+  entry.badgeError = {code:'asset_error',params:{reason:'damaged'}};
+  entry.revision++;
+  await act(async () => emit('entry-changed'));
+  await settle(() => tab('image').querySelector('.badge-tab-error') && !tab('text').querySelector('.badge-tab-error'));
+  check(!document.querySelector('.badge-section > .error'), 'Image errors must not be global');
+  await act(async () => tab('image').click());
+  check(panel('image').querySelector('.badge-error')?.textContent.includes('damaged or could not be decoded'),
+    'The asset error must be shown in the image panel');
+  check(panel('image').querySelector('.badge-error button')?.textContent.includes('Restore last valid badge'),
+    'Asset errors must offer recovery');
+  await act(async () => tab('icon').click());
+  check(panel('image').hidden && tab('image').querySelector('.badge-tab-error'), 'Switching tabs must keep the error marker');
+  check(!document.querySelector('.badge-section > .error'), 'Switching tabs must not move the error out of the panel');
+  document.querySelector('#result').textContent = `PASS: ${count} badge error scope assertions`;
+} catch (error) {
+  document.querySelector('#result').textContent = `FAIL: ${error.message}`;
+  throw error;
+} finally {
+  await act(async () => root.unmount());
+}
+</script>

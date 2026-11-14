@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Locale, type Session } from "./i18n";
+import { countText, limitText } from "./textInput";
 
 export function TextBadge({ locale, session, disabled, refresh, onPending }: {
   locale: Locale;
@@ -9,19 +10,27 @@ export function TextBadge({ locale, session, disabled, refresh, onPending }: {
   refresh: () => Promise<Session | null>;
   onPending: (pending: boolean) => void;
 }) {
-  const [text, setText] = useState(session.entry.text ?? "");
+  const [text, setText] = useState(() => limitText(session.entry.text ?? ""));
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [isComposing, setIsComposing] = useState(false);
   const latest = useRef({ session, refresh, onPending });
   latest.current = { session, refresh, onPending };
   const queue = useRef<{ text: string; composing: boolean } | null>(null);
   const active = useRef(false);
   const sending = useRef(false);
   const composing = useRef(false);
-  const enqueue = (text: string, composition: boolean) => {
-    setText(text);
+  const committed = useRef(text);
+  const currentText = useRef(text);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const changeText = (value: string) => { currentText.current = value; setText(value); };
+  const enqueue = (value: string, composition: boolean, force = false) => {
+    const draft = composition ? value : limitText(value);
+    if (input.current && input.current.value !== draft) input.current.value = draft;
+    if (!force && !composition && draft === currentText.current) return;
+    changeText(draft);
     setError(null);
-    queue.current = { text, composing: composition };
+    queue.current = { text: draft, composing: composition };
     latest.current.onPending(true);
     if (sending.current) return;
     sending.current = true;
@@ -30,9 +39,9 @@ export function TextBadge({ locale, session, disabled, refresh, onPending }: {
       let context = latest.current.session;
       try {
         while (queue.current && active.current) {
-          const input = queue.current;
+          const request = queue.current;
           queue.current = null;
-          await invoke("set_text_badge", { ...input, expectedEditRevision: context.entry.editRevision,
+          await invoke("set_text_badge", { ...request, expectedEditRevision: context.entry.editRevision,
             operationId: context.operation.progress?.operationId ?? null });
           const next = await latest.current.refresh();
           if (!next || !active.current) break;
@@ -51,24 +60,28 @@ export function TextBadge({ locale, session, disabled, refresh, onPending }: {
   useEffect(() => {
     active.current = true;
     // A reload ends the old WebView's composition; resume its in-memory draft.
-    if (latest.current.session.entry.textPending) enqueue(latest.current.session.entry.text ?? "", false);
+    if (latest.current.session.entry.textPending) enqueue(latest.current.session.entry.text ?? "", false, true);
     return () => { active.current = false; queue.current = null; };
   }, []);
   useEffect(() => {
-    if (!working) setText(session.entry.text ?? "");
+    if (!working) changeText(limitText(session.entry.text ?? ""));
   }, [session.entry.text, working]);
   useEffect(() => { setError(null); }, [session.entry.badge.id]);
   const t = (key: string) => translate(locale, key);
+  const shownCount = countText(isComposing ? committed.current : text);
   return <div className="text-badge">
     <label htmlFor="badge-text">{t("text.label")}</label>
-    <textarea id="badge-text" rows={1} value={text} disabled={disabled}
-      aria-describedby="badge-text-hint badge-text-count" aria-invalid={!!session.entry.badgeError || !!error}
-      onCompositionStart={() => { composing.current = true; }}
-      onCompositionEnd={event => { composing.current = false; enqueue(event.currentTarget.value, false); }}
-      onChange={event => enqueue(event.target.value, composing.current)} />
+    <div className="text-badge-input">
+      <textarea ref={input} id="badge-text" rows={1} value={text} disabled={disabled}
+        aria-describedby="badge-text-hint badge-text-count" aria-invalid={session.entry.badgeError?.code === "text_error" || !!error}
+        onCompositionStart={event => { composing.current = true; committed.current = event.currentTarget.value; setIsComposing(true); }}
+        onCompositionEnd={event => { composing.current = false; setIsComposing(false); enqueue(event.currentTarget.value, false, true); }}
+        onChange={event => enqueue(event.target.value, composing.current)} />
+      <span id="badge-text-count" className="muted text-badge-count" aria-live="polite">
+        {translate(locale, "text.count", { count: shownCount })}
+      </span>
+    </div>
     <p id="badge-text-hint" className="muted">{t("text.hint")}</p>
-    <p id="badge-text-count" className="muted" aria-live="polite">{!working && session.entry.text !== null && session.entry.textCount !== null
-      ? translate(locale, "text.count", { count: session.entry.textCount }) : ""}</p>
     {error !== null && <p role="alert" className="error">{errorMessage(locale, error)}</p>}
   </div>;
 }

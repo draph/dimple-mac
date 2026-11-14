@@ -107,9 +107,15 @@ pub fn tray(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri:
         true,
         None::<&str>,
     )?;
-    let about = Item::about(app, Some(&messages["menu.about"]), None)?;
+    let check = MenuItem::with_id(
+        app,
+        "check-updates",
+        &messages["menu.checkUpdates"],
+        true,
+        None::<&str>,
+    )?;
     let quit = Item::quit(app, Some(&messages["menu.quit"]))?;
-    Menu::with_items(app, &[&show, &settings, &about, &quit])
+    Menu::with_items(app, &[&show, &settings, &check, &quit])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

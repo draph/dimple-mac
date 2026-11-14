@@ -529,6 +529,8 @@ pub fn wake_at<R: tauri::Runtime>(
     finder: bool,
     anchor: Option<(f64, f64)>,
 ) {
+    // Showing the panel always returns to the main view; settings is a secondary page.
+    crate::settings::set_open(app, false);
     let hidden = app
         .get_webview_window("main")
         .is_some_and(|w| !w.is_visible().unwrap_or(true));
@@ -1761,6 +1763,26 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn waking_the_panel_returns_to_the_main_view() {
+        let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
+            .manage(super::Inbox::default())
+            .manage(crate::settings::Settings::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let is_open = || {
+            serde_json::to_value(crate::settings::get_shortcut_settings(app.handle().clone()))
+                .unwrap()["open"]
+                == true
+        };
+        crate::settings::open(app.handle());
+        assert!(is_open());
+        super::wake_at(app.handle(), false, None);
+        assert!(!is_open(), "showing the panel must return to the main view");
+    }
+
     fn targets() -> super::Snapshot {
         super::Snapshot {
             revision: 7,

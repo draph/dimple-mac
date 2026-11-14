@@ -51,9 +51,14 @@ try{
  await act(async()=>document.querySelector('.action-bar .primary').click());
  await settle(()=>!!prepared);
  check(prepared.action.params.effect==='original'&&prepared.action.images.length===7,'Apply must freeze the accepted effect and all seven images');
+ const containImages=prepared.action.images;
  await act(async()=>{entry.badge.opaque=true;entry.badge.effects=['original'];entry.revision++;await emit('entry-changed');});
  check(engraved().disabled&&original().checked,'Opaque images must disable engraving');
  check(document.querySelector('#badge-opaque-hint')?.textContent.includes('only supports original colors'),'The disabled effect must explain why');
+ await settle(()=>!document.querySelector('.action-bar .primary').disabled);
+ await act(async()=>document.querySelector('.action-bar .primary').click());
+ await settle(()=>prepared.action.images!==containImages);
+ check(prepared.action.images.some((image,index)=>image.png!==containImages[index].png),'Opaque apply must use cover images');
  await act(async()=>{entry.badgeError={code:'asset_error',params:{reason:'damaged'}};entry.revision++;await emit('entry-changed');});
  check(original().checked&&document.querySelector('.action-bar .primary').disabled,'Failed import retains effect while blocking old preview application');
  document.querySelector('#result').textContent=`PASS: ${count} effect state assertions`;
