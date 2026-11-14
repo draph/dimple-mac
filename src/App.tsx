@@ -75,6 +75,8 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const previewReady = !paramsPending && readyBadgeId === JSON.stringify([badgeId, renderParams]) && !!badgeSource && !entry?.badgeError && !entry?.importing && !textQueued;
   const textBadgeError = entry?.badgeError?.code === "text_error" ? entry.badgeError : null;
   const imageBadgeError = entry?.badgeError && entry.badgeError.code !== "text_error" ? entry.badgeError : null;
+  // An inactive Finder is expected guidance after a wake, not a failed action.
+  const finderInactiveError = entry?.error?.code === "entry_error" && entry.error.params.reason === "finderInactive" ? entry.error : null;
   const errorTab = entry?.badgeError ? (entry.badgeError.code === "text_error" ? "text" : "image") : null;
   const textErrorRecoverable = ["missing", "render", "timeout"].includes(String(textBadgeError?.params.reason ?? ""));
   useEffect(() => {
@@ -145,10 +147,27 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const blockSettings = settingsBlocked(session, submitting);
   const showSettings = settingsOpen && !blockSettings;
   useEffect(() => { if (showSettings) setAdjustmentsOpen(false); }, [showSettings]);
-  const wasSettingsOpen = useRef(false);
+  // Hiding the panel ends the settings session, so a late close must not restore focus.
+  const settingsFocusAllowed = useRef(true);
   useEffect(() => {
-    if (wasSettingsOpen.current && !showSettings) settingsButton.current?.focus();
-    wasSettingsOpen.current = showSettings;
+    const listener = listen<boolean>("panel-visibility", event => {
+      if (event.payload) return;
+      settingsFocusAllowed.current = false;
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      setAdjustmentsOpen(false);
+    });
+    return () => { void listener.then(fn => fn()).catch(() => {}); };
+  }, []);
+  const restoreSettingsFocus = useRef(false);
+  useEffect(() => {
+    if (showSettings) {
+      restoreSettingsFocus.current = false;
+      settingsFocusAllowed.current = true;
+      return;
+    }
+    if (!restoreSettingsFocus.current) return;
+    restoreSettingsFocus.current = false;
+    if (settingsFocusAllowed.current) settingsButton.current?.focus();
   }, [showSettings]);
   const command = (name: string, args?: Record<string, unknown>) => {
     const generation = epoch.current;
@@ -247,7 +266,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></svg>
         </button>
       </header>
-      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} appearance={appearance} language={language} onSelectLanguage={selectLanguage} />
+      <ShortcutSettings locale={locale} version={session?.version ?? ""} blocked={!!session && blockSettings} onOpenChange={setSettingsOpen} onClosed={() => { restoreSettingsFocus.current = true; }} appearance={appearance} language={language} onSelectLanguage={selectLanguage} />
       <div className="editor" hidden={showSettings}>
       <div className="editor-scroll">
       <section className="target card" aria-labelledby="target-heading" aria-busy={entry?.choosing || entry?.reading || entry?.checking || entry?.preparing}>
@@ -261,7 +280,9 @@ export default function App({ appearance }: { appearance: AppearanceController }
           </p>
           {entry.items.length === 1 ? <p className="target-path" title={entry.items[0].path}>{entry.items[0].path}</p> : <p className="muted">{t("preview.batch")}</p>}
 
-        </> : <p className="empty">{t("entry.empty")}</p>}
+        </> : <p role={finderInactiveError ? "status" : undefined} className="empty">
+          {finderInactiveError ? errorMessage(locale, finderInactiveError) : t("entry.empty")}
+        </p>}
         <div className="target-actions">
           <button disabled={busy || paramsPending} onClick={() => command("choose_targets")}>{t("entry.choose")}</button>
           <FolderSelectionMenu locale={locale} disabled={busy || paramsPending || showSettings} onSelect={() => command("finder_selection")} />
@@ -283,7 +304,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </>}
         {entry?.reading && <p role="status" className="muted">{t("entry.reading")}</p>}
         {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
-        {entry?.error && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
+        {entry?.error && !finderInactiveError && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
         {!!entry?.issues.length && <ul aria-label={t("entry.invalidItems")}>{entry.issues.map((issue, index) => <li key={`${index}:${issue.path}`}><span className="path">{issue.path}</span><p role="alert">{errorMessage(locale, issue.error)}</p></li>)}</ul>}
         </div>
       </section>

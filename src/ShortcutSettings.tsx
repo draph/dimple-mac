@@ -9,7 +9,7 @@ import { AboutSettings } from "./AboutSettings";
 import type { AppearanceController } from "./appearance";
 import type { LanguagePreference, LanguageStatus } from "./language";
 
-export function ShortcutSettings({ locale, version, blocked, onOpenChange, appearance, language, onSelectLanguage }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void; appearance: AppearanceController; language: LanguageStatus | null; onSelectLanguage: (preference: LanguagePreference) => Promise<void> }) {
+export function ShortcutSettings({ locale, version, blocked, onOpenChange, onClosed, appearance, language, onSelectLanguage }: { locale: Locale; version: string; blocked: boolean; onOpenChange: (open: boolean) => void; onClosed: () => void; appearance: AppearanceController; language: LanguageStatus | null; onSelectLanguage: (preference: LanguagePreference) => Promise<void> }) {
   const [status, setStatus] = useState<ShortcutStatus | null>(null);
   const [draft, setDraft] = useState<Value | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -86,7 +86,7 @@ export function ShortcutSettings({ locale, version, blocked, onOpenChange, appea
   }
   return <section ref={section} tabIndex={-1} className="settings" aria-labelledby="settings-title">
     <div className="settings-header"><h2 id="settings-title">{t("settings.title")}</h2><button className="quiet settings-back" disabled={saving} onClick={() => {
-      void stopCapture().then(() => invoke("close_settings")).then(() => setStatus({ ...status, open: false })).catch(setFailure);
+      void stopCapture().then(() => invoke("close_settings")).then(() => { setStatus({ ...status, open: false }); onClosed(); }).catch(setFailure);
     }}><span aria-hidden="true">‹ </span>{t("settings.close")}</button></div>
     <div className="settings-scroll">
     <AppearanceSettings locale={locale} appearance={appearance} />

@@ -209,6 +209,8 @@ pub fn receive_native<R: tauri::Runtime>(
     source: &str,
     paths: Vec<Result<PathBuf, AppError>>,
 ) {
+    // External input belongs to the main view; settings is a secondary page.
+    crate::settings::set_open(app, false);
     receive_paths(app, source, paths, false);
 }
 fn receive_paths<R: tauri::Runtime>(
@@ -524,16 +526,21 @@ pub fn wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 pub fn wake_from<R: tauri::Runtime>(app: &tauri::AppHandle<R>, finder: bool) {
     wake_at(app, finder, None);
 }
+fn reset_settings_on_wake<R: tauri::Runtime>(app: &tauri::AppHandle<R>, hidden: bool) {
+    // Re-showing a hidden panel returns to the main view; an already visible panel keeps its page.
+    if hidden {
+        crate::settings::set_open(app, false);
+    }
+}
 pub fn wake_at<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     finder: bool,
     anchor: Option<(f64, f64)>,
 ) {
-    // Showing the panel always returns to the main view; settings is a secondary page.
-    crate::settings::set_open(app, false);
     let hidden = app
         .get_webview_window("main")
         .is_some_and(|w| !w.is_visible().unwrap_or(true));
+    reset_settings_on_wake(app, hidden);
     let (automatic, expected_request) = {
         let state = app.state::<Inbox>();
         let mut state = state.0.lock().unwrap();
@@ -1765,7 +1772,7 @@ mod tests {
     }
 
     #[test]
-    fn waking_the_panel_returns_to_the_main_view() {
+    fn waking_returns_to_the_main_view_only_when_the_panel_was_hidden() {
         let app = tauri::test::mock_builder()
             .manage(crate::panel::Startup::default())
             .manage(super::Inbox::default())
@@ -1779,8 +1786,64 @@ mod tests {
         };
         crate::settings::open(app.handle());
         assert!(is_open());
+        super::reset_settings_on_wake(app.handle(), false);
+        assert!(is_open(), "a visible panel must keep its current page");
+        super::reset_settings_on_wake(app.handle(), true);
+        assert!(
+            !is_open(),
+            "re-showing a hidden panel must return to the main view"
+        );
+    }
+
+    #[test]
+    fn visible_wake_keeps_settings_open() {
+        let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
+            .manage(super::Inbox::default())
+            .manage(crate::settings::Settings::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let _window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let is_open = || {
+            serde_json::to_value(crate::settings::get_shortcut_settings(app.handle().clone()))
+                .unwrap()["open"]
+                == true
+        };
+        crate::settings::open(app.handle());
+        assert!(is_open());
         super::wake_at(app.handle(), false, None);
-        assert!(!is_open(), "showing the panel must return to the main view");
+        assert!(
+            is_open(),
+            "an already visible panel must keep its current page"
+        );
+    }
+
+    #[test]
+    fn external_input_returns_to_the_main_view() {
+        let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
+            .manage(super::Inbox::default())
+            .manage(crate::settings::Settings::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let is_open = || {
+            serde_json::to_value(crate::settings::get_shortcut_settings(app.handle().clone()))
+                .unwrap()["open"]
+                == true
+        };
+        crate::settings::open(app.handle());
+        assert!(is_open());
+        super::receive_native(
+            app.handle(),
+            "service",
+            vec![Err(crate::localization::AppError::reason(
+                "invalid_input",
+                "budget",
+            ))],
+        );
+        assert!(!is_open(), "external input must show the main view");
     }
 
     fn targets() -> super::Snapshot {

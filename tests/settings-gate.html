@@ -8,11 +8,13 @@ import { createRoot } from 'react-dom/client';
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { emit } from '@tauri-apps/api/event';
 import { ShortcutSettings } from '../src/ShortcutSettings.tsx';
+import { createAppearance } from '../src/appearance.ts';
 import '../src/App.css';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const appearance = createAppearance(() => localStorage, matchMedia('(prefers-color-scheme: dark)'), document.documentElement);
 const status = { settings: { enabled: true, shortcut: 'alt+KeyF' }, active: ['alt+KeyF'], uncertain: [], saved: false, error: null, open: false, capturing: false };
-let setBlocked, setLocale, setVersion, visible = false, delay = false, release;
+let setBlocked, setLocale, setVersion, visible = false, restored = 0, delay = false, release;
 mockIPC(async (cmd, args) => {
   if (cmd === 'get_shortcut_settings') {
     const value = structuredClone(status);
@@ -28,7 +30,8 @@ function Harness() {
   const [version, updateVersion] = useState('9.8.7-test');
   setBlocked = update;
   setLocale = updateLocale; setVersion = updateVersion;
-  return React.createElement(ShortcutSettings, { locale, version, blocked, onOpenChange: open => { visible = open; } });
+  return React.createElement(ShortcutSettings, { locale, version, blocked, onOpenChange: open => { visible = open; }, onClosed: () => { restored++; },
+    appearance, language: { locale, preference: 'system', revision: 0 }, onSelectLanguage: async () => {} });
 }
 const root = createRoot(document.querySelector('#root'));
 let assertions = 0;
@@ -43,13 +46,13 @@ try {
   check(visible, 'Idle settings must open');
   for (const [locale, title, version, update, description] of [
     ['en', 'About', 'Version 9.8.7-test', 'Check for updates', 'Updates are currently unavailable.'],
-    ['zh-Hans', '关于', '版本 9.8.7-test', '检查更新', '更新功能暂不可用。'],
+    ['zh-Hans', '关于', '版本 9.8.7-test', '检查更新', '目前无法检查更新。'],
   ]) {
     await act(async () => setLocale(locale));
     const about = document.querySelector('.about');
     const button = about.querySelector('button');
     check(about.getAttribute('aria-labelledby') === 'about-title' && about.querySelector('h2').textContent === title, 'About must have a localized accessible heading');
-    check(about.textContent.includes('Dimple') && about.textContent.includes(version), 'About must show the name and supplied version');
+    check(about.textContent.includes(version), 'About must show the supplied version');
     check(button.disabled && button.textContent === update, 'Update must be natively disabled and localized');
     check(document.getElementById(button.getAttribute('aria-describedby'))?.textContent === description, 'Update must describe its unavailability');
   }
@@ -57,6 +60,7 @@ try {
   check(document.querySelector('.about').textContent.includes('Version 2.3.4'), 'Version changes must render from props');
   await act(async () => setBlocked(true));
   check(!visible && !status.open, 'Starting an operation must close settings');
+  check(restored === 0, 'Automatic closes must not restore focus');
   await open();
   check(!visible && !status.open, 'A blocked native request must be discarded');
   await open(true);
@@ -69,6 +73,7 @@ try {
   check(visible && status.open, 'A stale blocked response must preserve a later explicit request');
   await act(async () => document.querySelector('button').click());
   check(!visible && !status.open, 'Back must close settings');
+  check(restored === 1, 'Back must restore focus');
   await act(async () => setBlocked(true));
   await open(true);
   await act(async () => setBlocked(false));

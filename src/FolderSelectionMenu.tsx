@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { translate, type Locale } from "./i18n";
 
 export function FolderSelectionMenu({ locale, disabled, onSelect }: { locale: Locale; disabled: boolean; onSelect: () => void }) {
@@ -10,6 +11,10 @@ export function FolderSelectionMenu({ locale, disabled, onSelect }: { locale: Lo
     setOpen(false);
     if (restoreFocus) trigger.current?.focus();
   };
+  useEffect(() => {
+    const listener = listen<boolean>("panel-visibility", event => { if (!event.payload) setOpen(false); });
+    return () => { void listener.then(fn => fn()).catch(() => {}); };
+  }, []);
   useLayoutEffect(() => {
     if (disabled) { setOpen(false); return; }
     if (!open) return;
