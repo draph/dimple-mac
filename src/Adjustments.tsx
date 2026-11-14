@@ -131,16 +131,16 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
       <div className="theme-presets" role="group" aria-label={t("adjust.theme")}>
         {themes.map(([name, theme]) => <button key={name} className="theme-swatch" aria-label={t(`adjust.${name}`)} title={t(`adjust.${name}`)} style={{ backgroundColor: theme === "native" ? "#65BDF3" : theme }} aria-pressed={params.theme === theme} onClick={() => enqueue({ ...value.current, theme })}><span className="sr-only">{t(`adjust.${name}`)}</span></button>)}
       </div>
-      <label className="custom-color"><span>{t("adjust.custom")}</span> <input type="color" aria-label={t("adjust.picker")} value={/^#[\da-f]{6}$/i.test(color) ? color : "#808080"}
+      <label className="custom-color"><span>{t("adjust.custom")}</span> <input type="color" aria-label={t("adjust.picker")} aria-describedby="adjust-hint" value={/^#[\da-f]{6}$/i.test(color) ? color : "#808080"}
         onChange={event => enqueue({ ...value.current, theme: event.target.value.toUpperCase() })} />
-        <input type="text" aria-label={t("adjust.hex")} value={color} aria-invalid={invalid} spellCheck={false}
+        <input type="text" aria-label={t("adjust.hex")} aria-describedby="adjust-hint" value={color} aria-invalid={invalid} spellCheck={false}
           onChange={event => {
             const input = event.target.value; setColor(input);
             if (/^#[\da-f]{6}$/i.test(input)) enqueue({ ...value.current, theme: input.toUpperCase() });
             else { invalidRef.current = true; setInvalid(true); latest.current.onChange(null, true); }
           }} />
       </label>
-      <p className="muted">{t("adjust.hint")}</p>
+      <p id="adjust-hint" className="muted">{t("adjust.hint")}</p>
       {invalid && <p role="alert" className="error">{t("adjust.invalid")}</p>}
       <button onClick={() => enqueue({ ...defaultParams, effect: value.current.effect })}>{t("adjust.reset")}</button>
     </fieldset>
