@@ -36,9 +36,9 @@
 
 - 需求：`/Users/efun/data/notes/efun/project/未命名/folderify_gui.md`。
 - 设计：同目录 `folderify_gui_详细设计.md`；进度：`folderify_gui_工作任务.md`。
-- 按 T01–T24 推进；实测假设失败要更新设计，不静默删减功能。未运行的检查不记通过。
+- 按 T01–T24 及 T22-U 推进；实测假设失败要更新设计，不静默删减功能。未运行的检查不记通过。
 - 文档更新使用 obsidian-docs，沿用原文档；工程 README、配置和代码保留项目内。
-- Tauri v2 + Rust + React + TypeScript + Vite + Tailwind；仅 macOS，无账号、遥测或运行时网络依赖。
+- Tauri v2 + Rust + React + TypeScript + Vite + Tailwind；仅 macOS，无账号、遥测或后台网络；核心功能离线可用，仅用户主动检查更新时访问 GitHub Releases API。
 - 不开放前端任意 fs／shell 权限，只加载可信本地 UI；导入 SVG 不执行、不直接进入 DOM。
 - 图标测试仅写隔离临时目录，不改目录正文，不声称能撤销旧图标；恢复默认必须确认。
 - 原生输入登记 ID，后端负责身份复核及写入互斥。超时不等于系统写入取消，不重写未决项。
