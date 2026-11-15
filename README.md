@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A macOS menu bar app for giving folders custom icons with a native recessed look. Select folders, choose a badge, and apply—all in one panel.
 
-Dimple is an independently maintained GUI project inspired by [lgarron/folderify](https://github.com/lgarron/folderify), not its official desktop app. It uses Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.
+Dimple is built with Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.
 
 ## Features
 

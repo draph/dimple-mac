@@ -4,7 +4,7 @@
 
 一款 macOS 菜单栏工具，为文件夹添加具有原生凹陷质感的自定义图标。选中文件夹、选择徽标、应用，在同一个面板完成。
 
-Dimple 是独立维护的图形界面项目，以 [lgarron/folderify](https://github.com/lgarron/folderify) 为参考，并非其官方桌面版本。使用 Tauri v2、Rust、React、TypeScript、Vite 和 Tailwind。
+Dimple 使用 Tauri v2、Rust、React、TypeScript、Vite 和 Tailwind。
 
 ## 功能
 
