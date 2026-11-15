@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { countText, limitText } from "./textInput.ts";
+import { countText, draftText, limitText, syncedText } from "./textInput.ts";
 
 test("counts user-visible characters instead of UTF-16 units", () => {
   for (const [text, count] of [
@@ -13,6 +13,15 @@ test("counts user-visible characters instead of UTF-16 units", () => {
   ] as const) {
     assert.equal(countText(text), count);
   }
+});
+
+test("keeps composition drafts whole and ignores lagging backend text", () => {
+  assert.equal(draftText("gongju", true), "gongju");
+  assert.equal(draftText("gongju", false), "gong");
+  assert.equal(draftText("工具", false), "工具");
+  assert.equal(syncedText("gong", true), null);
+  assert.equal(syncedText("gong", false), "gong");
+  assert.equal(syncedText(null, false), "");
 });
 
 test("limits text without splitting grapheme clusters", () => {

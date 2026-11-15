@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Locale, type Session } from "./i18n";
-import { countText, limitText } from "./textInput";
+import { countText, draftText, syncedText } from "./textInput";
 
 export function TextBadge({ locale, session, disabled, refresh, onPending }: {
   locale: Locale;
@@ -10,7 +10,7 @@ export function TextBadge({ locale, session, disabled, refresh, onPending }: {
   refresh: () => Promise<Session | null>;
   onPending: (pending: boolean) => void;
 }) {
-  const [text, setText] = useState(() => limitText(session.entry.text ?? ""));
+  const [text, setText] = useState(() => syncedText(session.entry.text, false) ?? "");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [isComposing, setIsComposing] = useState(false);
@@ -25,8 +25,9 @@ export function TextBadge({ locale, session, disabled, refresh, onPending }: {
   const input = useRef<HTMLTextAreaElement>(null);
   const changeText = (value: string) => { currentText.current = value; setText(value); };
   const enqueue = (value: string, composition: boolean, force = false) => {
-    const draft = composition ? value : limitText(value);
-    if (input.current && input.current.value !== draft) input.current.value = draft;
+    const draft = draftText(value, composition);
+    // Never rewrite the DOM during composition; it would end or truncate the IME draft.
+    if (!composition && input.current && input.current.value !== draft) input.current.value = draft;
     if (!force && !composition && draft === currentText.current) return;
     changeText(draft);
     setError(null);
@@ -64,7 +65,9 @@ export function TextBadge({ locale, session, disabled, refresh, onPending }: {
     return () => { active.current = false; queue.current = null; };
   }, []);
   useEffect(() => {
-    if (!working) changeText(limitText(session.entry.text ?? ""));
+    if (working || sending.current || queue.current) return;
+    const next = syncedText(session.entry.text, composing.current);
+    if (next !== null) changeText(next);
   }, [session.entry.text, working]);
   useEffect(() => { setError(null); }, [session.entry.badge.id]);
   const t = (key: string) => translate(locale, key);
