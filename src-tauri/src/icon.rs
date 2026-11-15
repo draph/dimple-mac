@@ -224,6 +224,17 @@ pub fn native(path: &Path, bytes: Option<&[u8]>) -> Result<(), AppError> {
         }
     })
 }
+fn refresh_finder(path: &Path) {
+    // Finder ignores in-place Icon\r resource-fork changes; a separate attribute change re-reads it.
+    let icon = path.join("Icon\r");
+    if let Ok(file) = File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&icon)
+    {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
+}
 pub fn write(
     target: &Target,
     expected: &Fingerprint,
@@ -252,6 +263,9 @@ pub fn write(
                     || targets::check_actual(target, &path).is_err()
                 {
                     return Err(error("uncertain"));
+                }
+                if outcome.is_ok() && bytes.is_some() && expected.has_icon() {
+                    refresh_finder(&path);
                 }
                 outcome
             })();
@@ -311,6 +325,26 @@ mod tests {
         std::fs::write(root.join("body"), b"keep").unwrap();
         std::os::unix::fs::symlink(root.join("body"), root.join("Icon\r")).unwrap();
         assert!(fingerprint(&root).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn finder_refresh_updates_the_icon_timestamp_and_ignores_symlinks() {
+        let root = std::env::temp_dir().join(targets::next_id("t08-refresh"));
+        std::fs::create_dir(&root).unwrap();
+        let icon = root.join("Icon\r");
+        std::fs::write(&icon, b"icon").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
+        File::open(&icon).unwrap().set_modified(old).unwrap();
+        refresh_finder(&root);
+        assert!(std::fs::metadata(&icon).unwrap().modified().unwrap() > old);
+
+        let body = root.join("body");
+        std::fs::write(&body, b"keep").unwrap();
+        File::open(&body).unwrap().set_modified(old).unwrap();
+        std::fs::remove_file(&icon).unwrap();
+        std::os::unix::fs::symlink(&body, &icon).unwrap();
+        refresh_finder(&root);
+        assert_eq!(std::fs::metadata(&body).unwrap().modified().unwrap(), old);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
