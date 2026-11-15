@@ -145,6 +145,9 @@ pub fn run() {
                         panel::show(app, panel::tray_anchor(app));
                         settings::open_for_update(app);
                     }
+                    if e.id.as_ref() == "quit" {
+                        quit_app(app.clone());
+                    }
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click {

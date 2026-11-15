@@ -114,8 +114,13 @@ pub fn tray(app: &tauri::AppHandle, locale: Locale) -> tauri::Result<Menu<tauri:
         true,
         None::<&str>,
     )?;
-    let quit = Item::quit(app, Some(&messages["menu.quit"]))?;
-    Menu::with_items(app, &[&show, &settings, &check, &quit])
+    let before_check = Item::separator(app)?;
+    let before_quit = Item::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", &messages["menu.quit"], true, None::<&str>)?;
+    Menu::with_items(
+        app,
+        &[&show, &settings, &before_check, &check, &before_quit, &quit],
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
