@@ -17,7 +17,7 @@ Dimple 使用 Tauri v2、Rust、React、TypeScript、Vite 和 Tailwind。
 
 ## 安装
 
-Dimple 以面向 Apple Silicon 和 Intel Mac 的 Universal DMG 分发，需要 macOS 13.3 或更高版本。项目仅在 macOS 26.6.2 Apple Silicon 上验证过；Intel Mac 和 macOS 13.3–25 未经测试。
+Dimple 以面向 Apple Silicon 和 Intel Mac 的 Universal DMG 分发，需要 macOS 13.3 或更高版本。项目已在 macOS 26.6.2 Apple Silicon 上验证，并在 Intel Mac 上验证了 Universal 构建；其他 macOS 版本和硬件组合仍未测试。
 
 从 [GitHub Releases](https://github.com/draph/dimple-mac/releases) 下载 DMG，打开后将 **Dimple** 拖入**应用程序**。无需安装 Python、ImageMagick 或开发工具。
 
@@ -43,7 +43,7 @@ Dimple 以面向 Apple Silicon 和 Intel Mac 的 Universal DMG 分发，需要 m
 
 Dimple 完全离线工作：无账号、遥测或上传。唯一的联网是主动点击**检查更新**，它查询公开的 GitHub Releases API 并打开 Release 页，不下载或安装任何内容。
 
-- 仅面向 macOS；采用 ad-hoc 签名、未公证，Intel Mac 与 macOS 13.3–25 未经测试（见安装）。
+- 仅面向 macOS；采用 ad-hoc 签名、未公证。已在 Apple Silicon 和 Intel Mac 上测试；其他 macOS 版本仍未测试（见安装）。
 - 外接盘、网络盘和云同步目录取决于自身权限，图标可能不跨设备同步。
 - 文件夹底图保持 Big Sur 浅色原生蓝，不随系统版本或界面深浅色变化；文件夹着色与深浅色相互独立。
 - 写入使用 macOS 文件协调与身份复核；绕过协调的程序仍可能在事后替换路径。

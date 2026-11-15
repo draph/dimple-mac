@@ -17,7 +17,7 @@ Dimple is built with Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.
 
 ## Installation
 
-Dimple is a Universal DMG for Apple Silicon and Intel Macs and requires macOS 13.3 or later. The project has only tested macOS 26.6.2 on Apple Silicon; Intel Macs and macOS 13.3–25 are not verified.
+Dimple is a Universal DMG for Apple Silicon and Intel Macs and requires macOS 13.3 or later. The project has tested macOS 26.6.2 on Apple Silicon and has verified the Universal build on an Intel Mac; other macOS versions and hardware combinations remain untested.
 
 Download the DMG from [GitHub Releases](https://github.com/draph/dimple-mac/releases), open it, and drag **Dimple** to **Applications**. No Python, ImageMagick, or development tools are required.
 
@@ -43,7 +43,7 @@ Input above 100 folders, mixed folders and badges, or an entirely invalid select
 
 Dimple works entirely offline: no account, telemetry, or uploads. Its only network access is the manual **Check for updates**, which queries the public GitHub Releases API and opens the release page without downloading or installing anything.
 
-- macOS only; ad-hoc signed and not notarized, with Intel Macs and macOS 13.3–25 untested (see Installation).
+- macOS only; ad-hoc signed and not notarized. Tested on Apple Silicon and Intel; other macOS versions remain untested (see Installation).
 - External, network, and cloud-synced folders depend on their own permissions, and icons may not sync across devices.
 - The folder template stays Big Sur light with native blue, whatever the system version or interface appearance; folder color is separate from light/dark mode.
 - Writing uses macOS file coordination and identity checks; programs that bypass coordination can still replace a path afterwards.
