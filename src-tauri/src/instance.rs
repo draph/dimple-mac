@@ -123,7 +123,10 @@ pub fn install(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
     std::thread::spawn(move || {
         for connection in listener.incoming() {
             match connection {
-                Ok(_) => crate::entry::show(&app),
+                Ok(_) => {
+                    crate::entry::reset_released_if_hidden(&app);
+                    crate::entry::show(&app)
+                }
                 Err(_) => break,
             }
         }

@@ -26,6 +26,8 @@ pub struct Snapshot {
     #[serde(skip)]
     cleanup: Option<(String, u64)>,
     #[serde(skip)]
+    released: bool,
+    #[serde(skip)]
     request: u64,
     source: String,
     items: Vec<InputItem>,
@@ -167,6 +169,7 @@ fn all_succeeded(s: &Snapshot) -> bool {
     })
 }
 fn edited(s: &mut Snapshot) {
+    s.released = false;
     s.edit_revision += 1;
     s.cleanup = None;
     s.prepared = None;
@@ -188,6 +191,28 @@ fn release_success(s: &mut Snapshot, token: &(String, u64)) -> bool {
     s.source.clear();
     s.issues.clear();
     s.error = None;
+    s.request += 1;
+    edited(s);
+    s.released = true;
+    true
+}
+fn reset_released_defaults(s: &mut Snapshot, hidden: bool) -> bool {
+    if !hidden || !s.released || !s.items.is_empty() || s.operation_locked() || candidate_pending(s)
+    {
+        return false;
+    }
+    s.badge = Badge::default();
+    s.params = operation::Params::default();
+    s.mask = None;
+    s.badge_error = None;
+    s.text = None;
+    s.text_count = None;
+    s.text_pending = false;
+    s.importing = s.native_importing;
+    s.error = None;
+    s.issues.clear();
+    s.source.clear();
+    s.text_request += 1;
     s.request += 1;
     edited(s);
     true
@@ -221,10 +246,11 @@ fn receive_paths<R: tauri::Runtime>(
 ) {
     let app = app.clone();
     let source = source.to_owned();
+    reset_released_if_hidden(&app);
+    show(&app);
     let revision = {
         let state = app.state::<Inbox>();
         let mut s = state.0.lock().unwrap();
-        show(&app);
         if s.operation_locked()
             || (s.choosing && !from_picker)
             || (s.checking && !s.native_importing)
@@ -510,7 +536,26 @@ fn accept(s: &mut Snapshot, source: &str, items: Vec<InputItem>) {
     s.error = None;
 }
 pub fn show<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    // Lock-free; callers must reset hidden released state before showing.
     crate::panel::show(app, None);
+}
+pub fn reset_released_if_hidden<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    // Runs before showing a hidden panel; must not hold Inbox.0.
+    let hidden = app
+        .get_webview_window("main")
+        .is_some_and(|w| !w.is_visible().unwrap_or(true));
+    reset_released_if(app, hidden);
+}
+// Must run before panel::show and without holding Inbox.0.
+fn reset_released_if<R: tauri::Runtime>(app: &tauri::AppHandle<R>, hidden: bool) {
+    if !hidden {
+        return;
+    }
+    let state = app.state::<Inbox>();
+    let mut state = state.0.lock().unwrap();
+    if reset_released_defaults(&mut state, true) {
+        commit_update(app, state);
+    }
 }
 pub fn open_settings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     let inbox = app.state::<Inbox>();
@@ -519,6 +564,7 @@ pub fn open_settings<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     let allowed = !s.preparing && !s.operation_locked();
     crate::settings::set_open(app, allowed);
     drop(s);
+    reset_released_if_hidden(app);
     show(app);
     allowed
 }
@@ -546,9 +592,10 @@ pub fn wake_at<R: tauri::Runtime>(
     let (automatic, expected_request) = {
         let state = app.state::<Inbox>();
         let mut state = state.0.lock().unwrap();
+        let reset = reset_released_defaults(&mut state, hidden);
         let plan = plan_wake(&mut state, hidden);
         let expected_request = state.request;
-        if plan.1 {
+        if reset || plan.1 {
             commit_update(app, state);
         } else {
             drop(state);
@@ -2052,6 +2099,120 @@ mod tests {
             assert!(s.cleanup.is_none());
             assert_eq!(s.edit_revision, token.1 + 1);
         }
+    }
+    #[test]
+    fn reopening_after_success_restores_defaults_once() {
+        let mut s = successful_state();
+        s.badge.id = "text".into();
+        s.badge.text = Some("工具".into());
+        s.text = Some("工具".into());
+        s.text_count = Some(2);
+        s.params = serde_json::from_value(serde_json::json!({
+            "effect":"original","scale":2.0,"offsetX":100.0,"offsetY":-100.0,"theme":"#EF4444"
+        }))
+        .unwrap();
+        let token = s.cleanup.clone().unwrap();
+        assert!(super::release_success(&mut s, &token));
+        assert!(s.released);
+        assert!(!super::reset_released_defaults(&mut s, false));
+        assert_eq!(s.badge.text.as_deref(), Some("工具"));
+        let edits = s.edit_revision;
+        assert!(super::reset_released_defaults(&mut s, true));
+        assert_eq!(s.badge.id, "code");
+        assert!(s.badge.text.is_none());
+        assert_eq!(s.params, crate::operation::Params::default());
+        assert!(s.text.is_none());
+        assert!(s.text_count.is_none());
+        assert_eq!(s.edit_revision, edits + 1);
+        assert!(!s.released);
+        assert!(!super::reset_released_defaults(&mut s, true));
+    }
+    #[test]
+    fn showing_the_panel_does_not_acquire_the_inbox_lock() {
+        use tauri::Manager;
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox::default())
+            .manage(crate::panel::Startup::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let _window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let state = app.state::<super::Inbox>();
+        let guard = state.0.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = app.handle().clone();
+        std::thread::spawn(move || {
+            super::show(&handle);
+            let _ = tx.send(());
+        });
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(1)).is_ok());
+        drop(guard);
+    }
+    #[test]
+    fn hidden_reset_restores_defaults_and_emits_update() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        use tauri::{Listener as _, Manager as _};
+        let mut state = successful_state();
+        let token = state.cleanup.clone().unwrap();
+        assert!(super::release_success(&mut state, &token));
+        state.badge.id = "custom".into();
+        state.error = Some("changed".into());
+        state.source = "service".into();
+        let revision = state.revision;
+        let edits = state.edit_revision;
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let changed = Arc::new(AtomicBool::new(false));
+        let flag = changed.clone();
+        app.listen("entry-changed", move |_| {
+            flag.store(true, Ordering::SeqCst);
+        });
+        super::reset_released_if(app.handle(), true);
+        let state = app.state::<super::Inbox>();
+        let s = state.0.lock().unwrap();
+        assert_eq!(s.badge.id, "code");
+        assert!(!s.released);
+        assert!(s.error.is_none());
+        assert!(s.source.is_empty());
+        assert!(s.revision > revision);
+        assert!(s.edit_revision > edits);
+        drop(s);
+        assert!(changed.load(Ordering::SeqCst));
+    }
+    #[test]
+    fn visible_panel_does_not_reset_released_defaults() {
+        use tauri::Manager;
+        let mut state = successful_state();
+        let token = state.cleanup.clone().unwrap();
+        assert!(super::release_success(&mut state, &token));
+        state.badge.id = "custom".into();
+        let app = tauri::test::mock_builder()
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let _window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        super::reset_released_if_hidden(app.handle());
+        let state = app.state::<super::Inbox>();
+        let s = state.0.lock().unwrap();
+        assert_eq!(s.badge.id, "custom");
+        assert!(s.released);
+    }
+    #[test]
+    fn new_edit_after_success_cancels_the_reopen_reset() {
+        let mut s = successful_state();
+        let token = s.cleanup.clone().unwrap();
+        assert!(super::release_success(&mut s, &token));
+        super::accept(&mut s, "service", targets().items);
+        assert!(!s.released);
+        assert!(!super::reset_released_defaults(&mut s, true));
     }
     #[test]
     fn successful_timer_cannot_clear_new_edits_or_another_operation() {

@@ -135,6 +135,7 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| {
                     if e.id.as_ref() == "settings" {
+                        crate::entry::reset_released_if_hidden(app);
                         panel::show(app, panel::tray_anchor(app));
                         settings::open(app);
                     }
@@ -142,6 +143,7 @@ pub fn run() {
                         wake_from_tray(app);
                     }
                     if e.id.as_ref() == "check-updates" {
+                        crate::entry::reset_released_if_hidden(app);
                         panel::show(app, panel::tray_anchor(app));
                         settings::open_for_update(app);
                     }
@@ -218,6 +220,7 @@ pub fn run() {
                 api.prevent_exit();
             }
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                entry::reset_released_if_hidden(app);
                 entry::show(app);
             }
         });
