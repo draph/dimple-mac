@@ -57,7 +57,8 @@ export function AboutSettings({
     try {
       const releases = await fetchReleases(next.signal);
       if (id !== request.current || !mounted.current) return;
-      setView(checkForUpdate(version, releases));
+      const result = checkForUpdate(version, releases);
+      setView(result.kind === "none" ? { kind: "error" } : result);
     } catch {
       if (id === request.current && mounted.current) setView({ kind: "error" });
     } finally {
@@ -99,59 +100,43 @@ export function AboutSettings({
         <h2 id="about-title" className="settings-card-title">{t("about.title")}</h2>
       </div>
       <div className="about-row">
-        <span>{translate(locale, "about.version", { version })}</span>
-        <button
-          type="button"
-          className="check-updates"
-          disabled={blocked || view.kind === "checking"}
-          onClick={() => void check()}
-        >
-          {t("about.update")}
-        </button>
+        <span className="about-version">{translate(locale, "about.version", { version })}</span>
         {view.kind === "checking" && (
-          <p className="about-update muted" role="status">{t("about.checking")}</p>
+          <span className="about-status muted" role="status">{t("about.checking")}</span>
         )}
         {view.kind === "up-to-date" && (
-          <p className="about-update muted" role="status">
-            {translate(locale, "about.upToDate", { version: view.current })}
-          </p>
+          <span className="about-status muted" role="status">{t("about.upToDate")}</span>
         )}
         {view.kind === "available" && (
-          <div className="about-update">
-            <p role="status">
-              {translate(
-                locale,
-                view.latest.prerelease ? "about.availablePrerelease" : "about.available",
-                { version: view.latest.version, current: view.current },
-              )}
-            </p>
-            <button
-              type="button"
-              className="primary about-download"
-              onClick={() => openReleases(view.latest.tag)}
-            >
-              {t("about.download")} <span aria-hidden="true">↗</span>
-              <span className="sr-only">{t("about.external")}</span>
-            </button>
-          </div>
-        )}
-        {view.kind === "none" && (
-          <div className="about-update">
-            <p role="status" className="muted">{t("about.noReleases")}</p>
-            <button type="button" className="quiet" onClick={() => openReleases(null)}>
-              {t("about.openReleases")} <span aria-hidden="true">↗</span>
-              <span className="sr-only">{t("about.external")}</span>
-            </button>
-          </div>
+          <span className="about-status" role="status">
+            {translate(
+              locale,
+              view.latest.prerelease ? "about.availablePrerelease" : "about.available",
+              { version: view.latest.version },
+            )}
+          </span>
         )}
         {(view.kind === "error" || view.kind === "invalid") && (
-          <div className="about-update">
-            <p role="alert" className="error">{t("about.checkFailed")}</p>
-            <button type="button" className="quiet" onClick={() => openReleases(null)}>
-              {t("about.openReleases")} <span aria-hidden="true">↗</span>
-              <span className="sr-only">{t("about.external")}</span>
-            </button>
-          </div>
+          <span className="about-status error" role="alert">{t("about.checkFailed")}</span>
+        )}
+        {view.kind === "available" ? (
+          <button
+            type="button"
+            className="primary about-download"
+            onClick={() => openReleases(view.latest.tag)}
+          >
+            {t("about.download")} <span aria-hidden="true">↗</span>
+            <span className="sr-only">{t("about.external")}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="check-updates"
+            disabled={blocked || view.kind === "checking"}
+            onClick={() => void check()}
+          >
+            {t("about.update")}
+          </button>
         )}
       </div>
       <div className="about-row">
