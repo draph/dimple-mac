@@ -3,13 +3,18 @@ use crate::{
     localization::AppError,
     targets::{self, Target},
 };
-use objc2::{AnyThread, rc::autoreleasepool};
+use objc2::{
+    AnyThread,
+    rc::{Retained, autoreleasepool},
+};
 use objc2_app_kit::{NSImage, NSWorkspace, NSWorkspaceIconCreationOptions};
 use objc2_foundation::{
     NSData, NSFileCoordinator, NSFileCoordinatorWritingOptions, NSString, NSURL,
 };
 use std::{cell::RefCell, fs::File, os::unix::fs::OpenOptionsExt, path::Path, ptr::NonNull};
 const LIMIT: usize = 16 * 1024 * 1024;
+// Finder coalesces the custom-icon flag transition unless the cleared state is visible.
+const REFRESH_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
 pub fn error(reason: &str) -> AppError {
     AppError::reason("operation_error", reason)
 }
@@ -204,36 +209,33 @@ pub fn fingerprint(path: &Path) -> Result<Fingerprint, AppError> {
     }
     Ok(Fingerprint { custom, resources })
 }
+fn decode(bytes: Option<&[u8]>) -> Result<Option<Retained<NSImage>>, AppError> {
+    bytes
+        .map(|data| {
+            NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(data))
+                .ok_or_else(|| error("image"))
+        })
+        .transpose()
+}
+fn set_image(path: &Path, image: Option<&NSImage>) -> Result<(), AppError> {
+    #[cfg(test)]
+    NATIVE_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let path = NSString::from_str(path.to_str().ok_or_else(|| error("write"))?);
+    if NSWorkspace::sharedWorkspace().setIcon_forFile_options(
+        image,
+        &path,
+        NSWorkspaceIconCreationOptions::empty(),
+    ) {
+        Ok(())
+    } else {
+        Err(error("write"))
+    }
+}
 pub fn native(path: &Path, bytes: Option<&[u8]>) -> Result<(), AppError> {
     autoreleasepool(|_| {
-        let image = bytes
-            .map(|data| {
-                NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(data))
-                    .ok_or_else(|| error("image"))
-            })
-            .transpose()?;
-        let path = NSString::from_str(path.to_str().ok_or_else(|| error("write"))?);
-        if NSWorkspace::sharedWorkspace().setIcon_forFile_options(
-            image.as_deref(),
-            &path,
-            NSWorkspaceIconCreationOptions::empty(),
-        ) {
-            Ok(())
-        } else {
-            Err(error("write"))
-        }
+        let image = decode(bytes)?;
+        set_image(path, image.as_deref())
     })
-}
-fn refresh_finder(path: &Path) {
-    // Finder ignores in-place Icon\r resource-fork changes; a separate attribute change re-reads it.
-    let icon = path.join("Icon\r");
-    if let Ok(file) = File::options()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(&icon)
-    {
-        let _ = file.set_modified(std::time::SystemTime::now());
-    }
 }
 pub fn write(
     target: &Target,
@@ -258,14 +260,36 @@ pub fn write(
                 if &fingerprint(&path)? != expected {
                     return Err(error("confirmation"));
                 }
-                let outcome = native(&path, bytes);
+                let outcome = if bytes.is_some() && expected.has_icon() {
+                    (|| {
+                        // Decode before clearing so a payload error leaves the old icon in place.
+                        let image = decode(bytes)?;
+                        if let Err(e) = native(&path, None) {
+                            let unchanged = fingerprint(&path).is_ok_and(|f| f == *expected);
+                            return Err(if unchanged { e } else { error("uncertain") });
+                        }
+                        std::thread::sleep(REFRESH_PAUSE);
+                        targets::revalidate(target).map_err(|_| error("uncertain"))?;
+                        targets::check_actual(target, &path).map_err(|_| error("uncertain"))?;
+                        if fingerprint(&path)
+                            .map_err(|_| error("uncertain"))?
+                            .has_icon()
+                        {
+                            return Err(error("uncertain"));
+                        }
+                        set_image(&path, image.as_deref()).map_err(|_| error("uncertain"))?;
+                        if !fingerprint(&path).map_err(|_| error("uncertain"))?.custom {
+                            return Err(error("uncertain"));
+                        }
+                        Ok(())
+                    })()
+                } else {
+                    native(&path, bytes)
+                };
                 if targets::revalidate(target).is_err()
                     || targets::check_actual(target, &path).is_err()
                 {
                     return Err(error("uncertain"));
-                }
-                if outcome.is_ok() && bytes.is_some() && expected.has_icon() {
-                    refresh_finder(&path);
                 }
                 outcome
             })();
@@ -286,6 +310,8 @@ pub fn write(
 }
 #[cfg(test)]
 pub static NATIVE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+#[cfg(test)]
+pub static NATIVE_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,23 +354,81 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn finder_refresh_updates_the_icon_timestamp_and_ignores_symlinks() {
+    fn coordinated_replacement_clears_and_reapplies_a_custom_icon() {
+        let _serial = NATIVE_TEST_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(targets::next_id("t08-refresh"));
         std::fs::create_dir(&root).unwrap();
-        let icon = root.join("Icon\r");
-        std::fs::write(&icon, b"icon").unwrap();
-        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
-        File::open(&icon).unwrap().set_modified(old).unwrap();
-        refresh_finder(&root);
-        assert!(std::fs::metadata(&icon).unwrap().modified().unwrap() > old);
+        let root = std::fs::canonicalize(root).unwrap();
+        let path = root.join("target");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("body"), b"keep").unwrap();
+        let t = targets::check(targets::Request::Inspect(vec![path.clone()]))
+            .unwrap()
+            .items
+            .remove(0);
+        let a =
+            std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/128x128.png")).unwrap();
+        let b =
+            std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/32x32.png")).unwrap();
+        native(&path, Some(&a)).unwrap();
+        let applied = fingerprint(&path).unwrap();
+        assert!(applied.custom);
+        NATIVE_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+        let error = write(&t, &applied, Some(b"not-an-image")).unwrap_err();
+        assert_eq!(error.params["reason"], "image");
+        assert_eq!(NATIVE_CALLS.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(fingerprint(&path).unwrap(), applied);
+        NATIVE_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+        write(&t, &applied, Some(&b)).unwrap();
+        assert_eq!(
+            NATIVE_CALLS.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "replacement must clear and reapply"
+        );
+        let replaced = fingerprint(&path).unwrap();
+        assert!(replaced.custom);
+        assert_ne!(replaced, applied);
+        assert_eq!(std::fs::read(path.join("body")).unwrap(), b"keep");
 
-        let body = root.join("body");
-        std::fs::write(&body, b"keep").unwrap();
-        File::open(&body).unwrap().set_modified(old).unwrap();
-        std::fs::remove_file(&icon).unwrap();
-        std::os::unix::fs::symlink(&body, &icon).unwrap();
-        refresh_finder(&root);
-        assert_eq!(std::fs::metadata(&body).unwrap().modified().unwrap(), old);
+        let clean = root.join("clean");
+        std::fs::create_dir(&clean).unwrap();
+        let clean_target = targets::check(targets::Request::Inspect(vec![clean.clone()]))
+            .unwrap()
+            .items
+            .remove(0);
+        let clean_before = fingerprint(&clean).unwrap();
+        assert!(!clean_before.has_icon());
+        NATIVE_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+        write(&clean_target, &clean_before, Some(&b)).unwrap();
+        assert_eq!(
+            NATIVE_CALLS.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "first apply must not clear"
+        );
+        assert!(fingerprint(&clean).unwrap().custom);
+
+        let orphan = root.join("orphan");
+        std::fs::create_dir(&orphan).unwrap();
+        native(&orphan, Some(&a)).unwrap();
+        let path_c = std::ffi::CString::new(orphan.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(
+            unsafe { libc::removexattr(path_c.as_ptr(), c"com.apple.FinderInfo".as_ptr(), 0) },
+            0
+        );
+        let orphan_before = fingerprint(&orphan).unwrap();
+        assert!(!orphan_before.custom && orphan_before.has_icon());
+        let orphan_target = targets::check(targets::Request::Inspect(vec![orphan.clone()]))
+            .unwrap()
+            .items
+            .remove(0);
+        NATIVE_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+        write(&orphan_target, &orphan_before, Some(&b)).unwrap();
+        assert_eq!(
+            NATIVE_CALLS.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "orphan replacement must clear and reapply"
+        );
+        assert!(fingerprint(&orphan).unwrap().custom);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
