@@ -385,7 +385,7 @@ mod tests {
             unsafe {
                 libc::setxattr(
                     path_c.as_ptr(),
-                    c"dev.folderify.test".as_ptr(),
+                    c"dev.dimple.test".as_ptr(),
                     b"keep".as_ptr().cast(),
                     4,
                     0,
@@ -405,7 +405,7 @@ mod tests {
             unsafe {
                 libc::setxattr(
                     path_c.as_ptr(),
-                    c"dev.folderify.test".as_ptr(),
+                    c"dev.dimple.test".as_ptr(),
                     b"changed".as_ptr().cast(),
                     7,
                     0,
@@ -429,7 +429,7 @@ mod tests {
             unsafe {
                 libc::getxattr(
                     path_c.as_ptr(),
-                    c"dev.folderify.test".as_ptr(),
+                    c"dev.dimple.test".as_ptr(),
                     value.as_mut_ptr().cast(),
                     7,
                     0,

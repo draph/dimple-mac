@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Folderify visual baselines</title>
+<title>Dimple visual baselines</title>
 <style>
   body { margin: 16px; font: 14px system-ui; color: #222; }
   button { margin-right: 8px; padding: 8px 12px; }
@@ -62,7 +62,7 @@
   document.querySelector("#download").addEventListener("click", () => {
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([JSON.stringify(window.visualBaselineData)], { type: "application/json" }));
-    link.download = "folderify-visual-baselines.json";
+    link.download = "dimple-visual-baselines.json";
     link.click();
     URL.revokeObjectURL(link.href);
   });

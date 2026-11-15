@@ -59,7 +59,7 @@ fn short_hash(bytes: &[u8]) -> u64 {
 }
 fn fallback_name(data_dir: &Path, uid: u32) -> String {
     let hash = short_hash(data_dir.as_os_str().as_bytes());
-    format!("folderify-desktop-{uid}-{hash:016x}.sock")
+    format!("dimple-{uid}-{hash:016x}.sock")
 }
 fn choose_socket_path(
     data_dir: &Path,
@@ -142,11 +142,10 @@ impl Drop for Instance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const LONG_DATA_DIR: &str = "/Users/a-very-long-account-name-exceeding-limit/Library/Application Support/dev.efun.folderify-desktop";
+    const LONG_DATA_DIR: &str = "/Users/a-very-long-account-name-exceeding-limit/Library/Application Support/com.draph.dimple";
     #[test]
     fn preferred_socket_path_is_kept_when_it_fits() {
-        let data_dir =
-            Path::new("/Users/example/Library/Application Support/dev.efun.folderify-desktop");
+        let data_dir = Path::new("/Users/example/Library/Application Support/com.draph.dimple");
         assert_eq!(
             choose_socket_path(data_dir, None, 501),
             Ok(data_dir.join("activate.sock"))
@@ -165,7 +164,7 @@ mod tests {
     fn fallback_names_are_stable_and_identity_scoped() {
         let app_a = Path::new(LONG_DATA_DIR);
         let app_b = Path::new(
-            "/Users/a-very-long-account-name-exceeding-limit/Library/Application Support/dev.efun.folderify-desktop-dev",
+            "/Users/a-very-long-account-name-exceeding-limit/Library/Application Support/com.draph.dimple-dev",
         );
         assert_eq!(fallback_name(app_a, 501), fallback_name(app_a, 501));
         assert_ne!(fallback_name(app_a, 501), fallback_name(app_b, 501));

@@ -200,20 +200,20 @@ fn body(path: &Path) -> Result<Vec<(PathBuf, bool, Vec<u8>)>> {
 }
 fn experiment(root: PathBuf, bytes: Vec<u8>) -> Result<()> {
     println!("THREAD background serial writer");
-    let path = root.join("Folderify T03 target");
+    let path = root.join("Dimple T03 target");
     fs::create_dir(&path)?;
     fs::create_dir(path.join("nested"))?;
     fs::write(path.join("nested/正文.txt"), "T03 content\n")?;
     fs::write(path.join("empty"), [])?;
     assert!(
         Command::new("/usr/bin/xattr")
-            .args(["-w", "org.folderify.probe", "unchanged"])
+            .args(["-w", "org.dimple.probe", "unchanged"])
             .arg(&path)
             .status()?
             .success()
     );
     let original = body(&path)?;
-    let unrelated = xattr(&path, "org.folderify.probe")?;
+    let unrelated = xattr(&path, "org.dimple.probe")?;
     let target = Target::new(&path)?;
     let before = fingerprint(&path)?;
     let started = Instant::now();
@@ -251,7 +251,7 @@ fn experiment(root: PathBuf, bytes: Vec<u8>) -> Result<()> {
     assert!(cleared.1.is_none());
     checkpoint(&path, "restored default (not previous icon)")?;
     assert!(body(&path)? == original, "body changed");
-    assert!(xattr(&path, "org.folderify.probe")? == unrelated);
+    assert!(xattr(&path, "org.dimple.probe")? == unrelated);
     println!("PASS body and unrelated xattr unchanged");
 
     assert!(native(&root.join("missing"), Some(&bytes)).is_ok_and(|ok| !ok));
@@ -314,7 +314,7 @@ fn pixels(path: &Path) -> Result<(u32, u32, Vec<u8>)> {
 }
 fn run() -> Result<()> {
     let output = Command::new("/usr/bin/mktemp")
-        .args(["-d", "/private/tmp/folderify-t03.XXXXXXXX"])
+        .args(["-d", "/private/tmp/dimple-t03.XXXXXXXX"])
         .output()?;
     if !output.status.success() {
         return Err("E_TEMP_CREATE".into());

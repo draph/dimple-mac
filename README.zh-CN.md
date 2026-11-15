@@ -84,11 +84,11 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run build:universal
 ```
 
-产物为 `src-tauri/target/universal-apple-darwin/release/bundle/` 下的 `macos/Dimple.app` 和 `dmg/Dimple_1.0.0_universal.dmg`。构建采用 ad-hoc 签名，不是 Developer ID 签名或公证：`codesign -dv` 显示 `Signature=adhoc`，`lipo -archs` 显示 `x86_64 arm64`。请从 Finder 或 `open path/to/Dimple.app` 启动，而不是直接运行 `Contents/MacOS` 内的可执行文件。应用标识继续保留 `dev.efun.folderify-desktop`，以沿用改名前的设置。
+产物为 `src-tauri/target/universal-apple-darwin/release/bundle/` 下的 `macos/Dimple.app` 和 `dmg/Dimple_1.0.0_universal.dmg`。构建采用 ad-hoc 签名，不是 Developer ID 签名或公证：`codesign -dv` 显示 `Signature=adhoc`，`lipo -archs` 显示 `x86_64 arm64`。请从 Finder 或 `open path/to/Dimple.app` 启动，而不是直接运行 `Contents/MacOS` 内的可执行文件。应用标识为 `com.draph.dimple`。
 
 ## 卸载
 
-如需恢复系统默认图标，请先在应用中执行恢复。从菜单栏退出 Dimple，再将其从**应用程序**移至废纸篓。删除应用不会影响已应用的图标，也不会恢复被覆盖的自定义图标。可选删除 `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json` 和 `language.json`。
+如需恢复系统默认图标，请先在应用中执行恢复。从菜单栏退出 Dimple，再将其从**应用程序**移至废纸篓。删除应用不会影响已应用的图标，也不会恢复被覆盖的自定义图标。可选删除 `~/Library/Application Support/com.draph.dimple/shortcut.json` 和 `language.json`。
 
 ## 许可与上游
 

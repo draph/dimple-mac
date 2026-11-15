@@ -489,8 +489,7 @@ mod tests {
     }
     #[test]
     fn config_round_trip_is_small_and_damaged_data_is_preserved() {
-        let dir =
-            std::env::temp_dir().join(format!("folderify-settings-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dimple-settings-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("shortcut.json");
         assert_eq!(load(&path), (ShortcutSettings::default(), None));

@@ -17,7 +17,7 @@ To compare a new export on the recorded environment:
 1. Run `npm run dev` from the repository root.
 2. Open `http://localhost:1420/tests/visual-baseline.html` in Safari.
 3. Choose **Generate visual baselines**, then **Download JSON for pixel comparison**.
-4. Run `cargo run --manifest-path src-tauri/Cargo.toml --locked --example check_visual_baselines -- /path/to/folderify-visual-baselines.json`.
+4. Run `cargo run --manifest-path src-tauri/Cargo.toml --locked --example check_visual_baselines -- /path/to/dimple-visual-baselines.json`.
 
 The checker requires the recorded browser environment and compares all 70 PNGs
 against the committed goldens. The threshold is zero changed pixels and zero

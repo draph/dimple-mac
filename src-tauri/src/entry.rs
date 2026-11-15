@@ -4051,7 +4051,7 @@ mod tests {
             &mut s,
             "service",
             vec![super::InputItem {
-                path: "/nonexistent/folderify-probe".into(),
+                path: "/nonexistent/dimple-probe".into(),
                 kind: "invalid",
                 ..Default::default()
             }],

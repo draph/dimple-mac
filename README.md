@@ -84,11 +84,11 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run build:universal
 ```
 
-Outputs are `macos/Dimple.app` and `dmg/Dimple_1.0.0_universal.dmg` under `src-tauri/target/universal-apple-darwin/release/bundle/`. The build is ad-hoc signed, not Developer ID signed or notarized: `codesign -dv` reports `Signature=adhoc` and `lipo -archs` reports `x86_64 arm64`. Launch the app from Finder or `open path/to/Dimple.app` rather than running the binary inside `Contents/MacOS`. The bundle identifier remains `dev.efun.folderify-desktop` to preserve settings across the rename.
+Outputs are `macos/Dimple.app` and `dmg/Dimple_1.0.0_universal.dmg` under `src-tauri/target/universal-apple-darwin/release/bundle/`. The build is ad-hoc signed, not Developer ID signed or notarized: `codesign -dv` reports `Signature=adhoc` and `lipo -archs` reports `x86_64 arm64`. Launch the app from Finder or `open path/to/Dimple.app` rather than running the binary inside `Contents/MacOS`. The bundle identifier is `com.draph.dimple`.
 
 ## Uninstall
 
-Restore default icons in the app first if you want them back. Quit Dimple from the menu bar, then move it to the Trash. Removing the app does not affect icons already applied or restore overwritten custom icons. Optionally delete `~/Library/Application Support/dev.efun.folderify-desktop/shortcut.json` and `language.json`.
+Restore default icons in the app first if you want them back. Quit Dimple from the menu bar, then move it to the Trash. Removing the app does not affect icons already applied or restore overwritten custom icons. Optionally delete `~/Library/Application Support/com.draph.dimple/shortcut.json` and `language.json`.
 
 ## License and upstream
 

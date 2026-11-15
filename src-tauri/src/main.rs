@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    folderify_desktop_lib::run()
+    dimple_lib::run()
 }

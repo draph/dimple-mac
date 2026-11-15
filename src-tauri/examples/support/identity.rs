@@ -96,7 +96,7 @@ pub(super) fn fixture(path: &Path, initial: Option<&[u8]>) -> Result<()> {
     fs::create_dir(path)?;
     fs::create_dir(path.join("nested"))?;
     fs::write(path.join("nested/正文 \n\"\\.txt"), "T07 body\n")?;
-    set_attribute(path, "org.folderify.probe", "unchanged", false)?;
+    set_attribute(path, "org.dimple.probe", "unchanged", false)?;
     // Preserve a label and folder-location bytes, not just an unrelated xattr.
     set_attribute(
         path,
@@ -131,7 +131,7 @@ pub(super) fn protected(path: &Path) -> Result<impl PartialEq + std::fmt::Debug 
     let metadata = fs::metadata(path)?;
     Ok((
         body(path)?,
-        xattr(path, "org.folderify.probe")?,
+        xattr(path, "org.dimple.probe")?,
         info,
         (metadata.mode(), metadata.uid(), metadata.gid()),
     ))

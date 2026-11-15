@@ -661,8 +661,7 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root =
-            std::env::temp_dir().join(format!("folderify-t14-{}-{nonce}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("dimple-t14-{}-{nonce}", std::process::id()));
         fs::create_dir(&root).unwrap();
         let _cleanup = DropDir(root.clone());
         let icns = root.join("visual.icns");
