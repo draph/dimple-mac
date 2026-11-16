@@ -84,7 +84,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run build:universal
 ```
 
-产物为 `src-tauri/target/universal-apple-darwin/release/bundle/` 下的 `macos/Dimple.app` 和 `dmg/Dimple_1.0.0_universal.dmg`。构建采用 ad-hoc 签名，不是 Developer ID 签名或公证：`codesign -dv` 显示 `Signature=adhoc`，`lipo -archs` 显示 `x86_64 arm64`。请从 Finder 或 `open path/to/Dimple.app` 启动，而不是直接运行 `Contents/MacOS` 内的可执行文件。应用标识为 `com.draph.dimple`。
+产物为 `src-tauri/target/universal-apple-darwin/release/bundle/` 下的 `macos/Dimple.app` 和 `dmg/Dimple_<version>_universal.dmg`。构建采用 ad-hoc 签名，不是 Developer ID 签名或公证：`codesign -dv` 显示 `Signature=adhoc`，`lipo -archs` 显示 `x86_64 arm64`。请从 Finder 或 `open path/to/Dimple.app` 启动，而不是直接运行 `Contents/MacOS` 内的可执行文件。应用标识为 `com.draph.dimple`。
 
 ## 卸载
 

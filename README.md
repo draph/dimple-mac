@@ -84,7 +84,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run build:universal
 ```
 
-Outputs are `macos/Dimple.app` and `dmg/Dimple_1.0.0_universal.dmg` under `src-tauri/target/universal-apple-darwin/release/bundle/`. The build is ad-hoc signed, not Developer ID signed or notarized: `codesign -dv` reports `Signature=adhoc` and `lipo -archs` reports `x86_64 arm64`. Launch the app from Finder or `open path/to/Dimple.app` rather than running the binary inside `Contents/MacOS`. The bundle identifier is `com.draph.dimple`.
+Outputs are `macos/Dimple.app` and `dmg/Dimple_<version>_universal.dmg` under `src-tauri/target/universal-apple-darwin/release/bundle/`. The build is ad-hoc signed, not Developer ID signed or notarized: `codesign -dv` reports `Signature=adhoc` and `lipo -archs` reports `x86_64 arm64`. Launch the app from Finder or `open path/to/Dimple.app` rather than running the binary inside `Contents/MacOS`. The bundle identifier is `com.draph.dimple`.
 
 ## Uninstall
 
