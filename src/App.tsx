@@ -77,6 +77,8 @@ export default function App({ appearance }: { appearance: AppearanceController }
   const imageBadgeError = entry?.badgeError && entry.badgeError.code !== "text_error" ? entry.badgeError : null;
   // An inactive Finder is expected guidance after a wake, not a failed action.
   const finderInactiveError = entry?.error?.code === "entry_error" && entry.error.params.reason === "finderInactive" ? entry.error : null;
+  // An empty selection repeats the persistent hint, so it needs no separate error line.
+  const emptyError = entry?.error?.code === "entry_error" && entry.error.params.reason === "empty";
   const errorTab = entry?.badgeError ? (entry.badgeError.code === "text_error" ? "text" : "image") : null;
   const textErrorRecoverable = ["missing", "render", "timeout"].includes(String(textBadgeError?.params.reason ?? ""));
   useEffect(() => {
@@ -304,7 +306,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </>}
         {entry?.reading && <p role="status" className="muted">{t("entry.reading")}</p>}
         {entry?.checking && <p role="status" className="muted">{t("entry.checking")}</p>}
-        {entry?.error && !finderInactiveError && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
+        {entry?.error && !finderInactiveError && !emptyError && <p role="alert" className="error">{errorMessage(locale, entry.error)}</p>}
         {!!entry?.issues.length && <ul aria-label={t("entry.invalidItems")}>{entry.issues.map((issue, index) => <li key={`${index}:${issue.path}`}><span className="path">{issue.path}</span><p role="alert">{errorMessage(locale, issue.error)}</p></li>)}</ul>}
         </div>
       </section>
