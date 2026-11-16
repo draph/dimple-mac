@@ -7,7 +7,7 @@ import { engravingOffset, hsl, outputSizes, tint, validParams } from "./renderPa
 
 // An 8px inset keeps the folder rim and tab shadow visible; the radius follows the face corner.
 const face = { x: 50, y: 266, width: 924, height: 640, radius: 64 };
-function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: HTMLImageElement, params: RenderParams, layer: HTMLCanvasElement, size = 1024, cover = false) {
+function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: HTMLImageElement | null, params: RenderParams, layer: HTMLCanvasElement, size = 1024, cover = false) {
   const ctx = canvas.getContext("2d");
   if (!validParams(params)) throw new Error("E_PREVIEW_PARAMS");
   if (layer.width !== 1024) layer.width = layer.height = 1024;
@@ -19,6 +19,8 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
   ink.setTransform(1, 0, 0, 1, 0, 0); ink.globalAlpha = 1; ink.globalCompositeOperation = "source-over";
   ink.clearRect(0, 0, 1024, 1024);
   ctx.scale(size / 1024, size / 1024);
+  ctx.drawImage(template, 0, 0, 1024, 1024);
+  if (!badge) return;
   let width: number, height: number, x: number, y: number;
   if (cover && params.effect === "original") {
     const factor = Math.max(face.width / badge.naturalWidth, face.height / badge.naturalHeight) * params.scale;
@@ -35,7 +37,6 @@ function render(canvas: HTMLCanvasElement, template: CanvasImageSource, badge: H
     y = 548 - height / 2 + params.offsetY * 2;
   }
   const edgeOffset = engravingOffset(size) * 1024 / size;
-  ctx.drawImage(template, 0, 0, 1024, 1024);
   if (params.effect === "original") {
     if (cover) {
       ctx.save();
@@ -124,7 +125,7 @@ export async function exportImages(badgeUrl: string, params: RenderParams, cover
 export function Preview({ locale, source, badgeId, params, cover = false, onReady }: { locale: Locale; source: string | null; badgeId: string; params: RenderParams; cover?: boolean; onReady: (key: string, ready: boolean) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLCanvasElement | null>(null);
-  const resources = useRef<{ badge: HTMLImageElement; template: CanvasImageSource; theme: string } | null>(null);
+  const resources = useRef<{ badge: HTMLImageElement | null; template: CanvasImageSource; theme: string } | null>(null);
   const decodedBadge = useRef<{ source: string; image: Promise<HTMLImageElement> } | null>(null);
   const frame = useRef<number | null>(null);
   const visible = useRef(false);
@@ -167,7 +168,9 @@ export function Preview({ locale, source, badgeId, params, cover = false, onRead
     resources.current = null; setStatus("loading"); onReady(latest.current.key, false);
     if (source && decodedBadge.current?.source !== source) decodedBadge.current = { source, image: load(source) };
     if (!source) decodedBadge.current = null;
-    if (source) void Promise.all([template(1024), decodedBadge.current!.image]).then(([image, badge]) => {
+    // Without a badge the preview still shows the themed folder on its own.
+    const badge = decodedBadge.current;
+    void Promise.all([template(1024), badge ? badge.image : Promise.resolve(null)]).then(([image, badge]) => {
       if (!active) return;
       resources.current = { badge, template: colored(image, params.theme), theme: params.theme };
       schedule.current();
@@ -176,7 +179,7 @@ export function Preview({ locale, source, badgeId, params, cover = false, onRead
   }, [source, badgeId, params.theme, onReady]);
   useEffect(() => { schedule.current(); }, [key, cover]);
   return <div className="preview">
-    <canvas ref={canvas} hidden={status !== "ready"} role="img" aria-label={translate(locale, "preview.description")} />
+    <canvas ref={canvas} hidden={status !== "ready"} role="img" aria-label={translate(locale, badgeId ? "preview.description" : "preview.emptyDescription")} />
     {status !== "ready" && <p role={status === "failed" ? "alert" : "status"}>{translate(locale, `preview.${status}`)}</p>}
   </div>;
 }

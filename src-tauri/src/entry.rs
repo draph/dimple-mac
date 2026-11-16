@@ -62,10 +62,12 @@ struct Badge {
 impl Default for Badge {
     fn default() -> Self {
         Self {
-            id: "code".into(),
-            width: 384,
-            height: 256,
+            // No badge is selected until the user picks one.
+            id: String::new(),
+            width: 0,
+            height: 0,
             opaque: false,
+            // Effects stay listed so parameter updates remain valid before a badge is chosen.
             effects: vec![operation::Effect::Engraved],
             text: None,
         }
@@ -791,6 +793,27 @@ pub fn select_badge<R: tauri::Runtime>(
     commit_update(&app, s);
     Ok(())
 }
+#[tauri::command]
+pub fn clear_badge<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    expected_edit_revision: u64,
+    operation_id: Option<String>,
+) -> Result<(), AppError> {
+    let inbox = app.state::<Inbox>();
+    let mut s = inbox.0.lock().unwrap();
+    accept_badge_edit(&mut s, expected_edit_revision, operation_id.as_deref())?;
+    s.badge = Badge::default();
+    s.mask = None;
+    s.badge_error = None;
+    s.text = None;
+    s.text_count = None;
+    // Only the badge is cleared; adjustments stay. Effects follow the badge that remains chooseable.
+    if !s.badge.effects.contains(&s.params.effect) {
+        s.params.effect = operation::Effect::Engraved;
+    }
+    commit_update(&app, s);
+    Ok(())
+}
 
 fn cancel_text(s: &mut Snapshot) {
     if s.text_pending {
@@ -884,6 +907,10 @@ fn finish_text(s: &mut Snapshot, request: u64, result: Result<targets::Checked, 
     }
 }
 
+fn clears_text(text: &str, composing: bool) -> bool {
+    !composing && text.len() <= crate::text::BYTE_LIMIT && text.trim().is_empty()
+}
+
 #[tauri::command]
 pub fn set_text_badge<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -892,6 +919,10 @@ pub fn set_text_badge<R: tauri::Runtime>(
     expected_edit_revision: u64,
     operation_id: Option<String>,
 ) -> Result<(), AppError> {
+    // Deleting the input has no badge to validate; clear it like the explicit button.
+    if clears_text(&text, composing) {
+        return clear_badge(app, expected_edit_revision, operation_id);
+    }
     let request = {
         let inbox = app.state::<Inbox>();
         let mut s = inbox.0.lock().unwrap();
@@ -2118,7 +2149,7 @@ mod tests {
         assert_eq!(s.badge.text.as_deref(), Some("工具"));
         let edits = s.edit_revision;
         assert!(super::reset_released_defaults(&mut s, true));
-        assert_eq!(s.badge.id, "code");
+        assert!(s.badge.id.is_empty());
         assert!(s.badge.text.is_none());
         assert_eq!(s.params, crate::operation::Params::default());
         assert!(s.text.is_none());
@@ -2126,6 +2157,51 @@ mod tests {
         assert_eq!(s.edit_revision, edits + 1);
         assert!(!s.released);
         assert!(!super::reset_released_defaults(&mut s, true));
+    }
+    #[test]
+    fn fresh_snapshot_starts_without_a_badge_and_rejects_apply() {
+        let mut s = targets();
+        assert!(s.badge.id.is_empty());
+        assert!(s.badge.text.is_none());
+        let request = crate::operation::parse(
+            &serde_json::json!({
+                "revision": 7,
+                "targetIds": [s.items[0].id],
+                "action": {
+                    "type": "apply",
+                    "templateId": "big-sur-light-blue",
+                    "badgeId": "code",
+                    "params": {"scale": 1, "offsetX": 0, "offsetY": 0, "theme": "native"},
+                    "images": []
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            super::begin_prepare(&mut s, &request).unwrap_err().params["reason"],
+            "asset"
+        );
+        // The last line of defence: an apply payload without a badge id never validates.
+        let empty = crate::operation::parse(
+            &serde_json::json!({
+                "revision": 7,
+                "targetIds": [s.items[0].id],
+                "action": {
+                    "type": "apply",
+                    "templateId": "big-sur-light-blue",
+                    "badgeId": "",
+                    "params": {"scale": 1, "offsetX": 0, "offsetY": 0, "theme": "native"},
+                    "images": []
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::operation::validate(&empty).unwrap_err().params["reason"],
+            "asset"
+        );
     }
     #[test]
     fn showing_the_panel_does_not_acquire_the_inbox_lock() {
@@ -2176,7 +2252,7 @@ mod tests {
         super::reset_released_if(app.handle(), true);
         let state = app.state::<super::Inbox>();
         let s = state.0.lock().unwrap();
-        assert_eq!(s.badge.id, "code");
+        assert!(s.badge.id.is_empty());
         assert!(!s.released);
         assert!(s.error.is_none());
         assert!(s.source.is_empty());
@@ -2560,6 +2636,7 @@ mod tests {
         std::fs::create_dir(&temp.0).unwrap();
         temp.0 = std::fs::canonicalize(&temp.0).unwrap();
         let mut state = super::Snapshot::default();
+        state.badge.id = "code".into();
         super::accept(
             &mut state,
             "picker",
@@ -2889,6 +2966,7 @@ mod tests {
             })
             .collect();
         let mut state = super::Snapshot::default();
+        state.badge.id = "code".into();
         super::accept(&mut state, "picker", super::check_paths(paths).unwrap());
         let action = if restore {
             serde_json::json!({"type":"restore"})
@@ -3845,7 +3923,7 @@ mod tests {
                 assert_eq!(serde_json::to_value(&s.items).unwrap(), before);
                 assert_eq!(s.edit_revision, revision);
                 assert_eq!(s.source, "finder-auto");
-                assert_eq!(s.badge.id, "code");
+                assert!(s.badge.id.is_empty());
                 assert_eq!(s.badge_error.as_ref().unwrap().params["reason"], "timeout");
                 assert_eq!(
                     s.operation.as_ref().map(|p| p.operation_id.clone()),
@@ -3874,7 +3952,7 @@ mod tests {
             }]),
         );
         assert!(s.importing);
-        assert_eq!(s.badge.id, "code");
+        assert!(s.badge.id.is_empty());
         super::finish_native_input(
             &mut s,
             10,
@@ -4071,6 +4149,136 @@ mod tests {
         )
         .unwrap();
         assert!(ipc("get_session", json!({})).unwrap()["entry"]["text"].is_null());
+        let revision = ipc("get_session", json!({})).unwrap()["entry"]["editRevision"]
+            .as_u64()
+            .unwrap();
+        ipc("set_text_badge", json!({"text":"A", "composing":false, "expectedEditRevision":revision, "operationId":null})).unwrap();
+        let start = std::time::Instant::now();
+        let typed = loop {
+            let snapshot = ipc("get_session", json!({})).unwrap();
+            if snapshot["entry"]["textPending"] == false {
+                break snapshot;
+            }
+            assert!(start.elapsed() < std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(typed["entry"]["badge"]["text"], "A");
+        let revision = typed["entry"]["editRevision"].as_u64().unwrap();
+        ipc("set_text_badge", json!({"text":"", "composing":false, "expectedEditRevision":revision, "operationId":null})).unwrap();
+        let cleared = ipc("get_session", json!({})).unwrap();
+        assert_eq!(cleared["entry"]["badge"]["id"], "");
+        assert!(cleared["entry"]["badge"]["text"].is_null());
+        assert!(cleared["entry"]["badgeError"].is_null());
+        assert!(cleared["entry"]["text"].is_null());
+        assert!(cleared["entry"]["textCount"].is_null());
+        assert_eq!(cleared["entry"]["editRevision"], revision + 1);
+        ipc("set_text_badge", json!({"text":" ", "composing":false, "expectedEditRevision":revision+1, "operationId":null})).unwrap();
+        let blank = ipc("get_session", json!({})).unwrap();
+        assert!(blank["entry"]["badgeError"].is_null());
+        assert_eq!(blank["entry"]["editRevision"], revision + 2);
+    }
+    #[test]
+    fn empty_input_clears_but_composition_does_not() {
+        assert!(super::clears_text("", false));
+        assert!(super::clears_text(" \n", false));
+        assert!(!super::clears_text("", true));
+        assert!(!super::clears_text(" a ", false));
+    }
+    #[test]
+    fn clear_badge_resets_badge_and_effect() {
+        use crate::operation::Effect;
+        use serde_json::{Value, json};
+        use tauri::Manager;
+        let mut state = targets();
+        state.badge = super::Badge {
+            id: "badge-test".into(),
+            width: 80,
+            height: 48,
+            opaque: true,
+            effects: vec![Effect::Original],
+            text: None,
+        };
+        state.mask = Some(std::sync::Arc::new(imported_mask()));
+        state.params = serde_json::from_value(json!({
+            "effect":"original","scale":1.5,"offsetX":0.0,"offsetY":0.0,"theme":"#EF4444"
+        }))
+        .unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(crate::panel::Startup::default())
+            .manage(crate::language::Language::for_test(
+                crate::localization::Locale::En,
+            ))
+            .manage(super::Inbox(std::sync::Mutex::new(state)))
+            .invoke_handler(tauri::generate_handler![
+                crate::get_session,
+                super::get_badge_mask,
+                super::clear_badge
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let ipc = |cmd: &str, body: Value| {
+            tauri::test::get_ipc_response(
+                &window,
+                tauri::webview::InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "tauri://localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.into(),
+                },
+            )
+            .map(|b| b.deserialize::<Value>().unwrap())
+        };
+        let revision = ipc("get_session", json!({})).unwrap()["entry"]["editRevision"]
+            .as_u64()
+            .unwrap();
+        assert!(ipc("get_session", json!({})).unwrap()["entry"]["badge"]["id"] == "badge-test");
+        assert!(
+            ipc("get_badge_mask", json!({"badgeId":"badge-test"}))
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .starts_with("iVBOR")
+        );
+        assert_eq!(
+            ipc(
+                "clear_badge",
+                json!({"expectedEditRevision":revision+1,"operationId":null})
+            )
+            .unwrap_err()["code"],
+            "target_changed"
+        );
+        app.state::<super::Inbox>().0.lock().unwrap().importing = true;
+        assert_eq!(
+            ipc(
+                "clear_badge",
+                json!({"expectedEditRevision":revision,"operationId":null})
+            )
+            .unwrap_err()["code"],
+            "busy"
+        );
+        app.state::<super::Inbox>().0.lock().unwrap().importing = false;
+        ipc(
+            "clear_badge",
+            json!({"expectedEditRevision":revision,"operationId":null}),
+        )
+        .unwrap();
+        let cleared = ipc("get_session", json!({})).unwrap();
+        assert_eq!(cleared["entry"]["badge"]["id"], "");
+        assert!(cleared["entry"]["badge"]["text"].is_null());
+        assert!(cleared["entry"]["badgeError"].is_null());
+        assert!(cleared["entry"]["text"].is_null());
+        assert!(cleared["entry"]["textCount"].is_null());
+        assert_eq!(cleared["entry"]["params"]["effect"], "engraved");
+        assert_eq!(cleared["entry"]["params"]["scale"], 1.5);
+        assert_eq!(cleared["entry"]["params"]["theme"], "#EF4444");
+        assert_eq!(cleared["entry"]["editRevision"], revision + 1);
+        assert!(ipc("get_badge_mask", json!({"badgeId":"badge-test"})).is_err());
     }
     #[test]
     fn text_edits_preserve_assets_reject_stale_results_and_gate_preparation() {
@@ -4092,7 +4300,7 @@ mod tests {
             }),
         );
         assert!(s.text_pending);
-        assert_eq!(s.badge.id, "code");
+        assert!(s.badge.id.is_empty());
         super::finish_text(
             &mut s,
             second,
@@ -4160,7 +4368,7 @@ mod tests {
             );
             assert!(!s.text_pending && !s.importing);
             assert!(s.active_read.is_none());
-            assert_eq!(s.badge.id, "code");
+            assert!(s.badge.id.is_empty());
             let revision = s.edit_revision;
             assert!(super::start_text(&mut s, "AB".into(), revision, None).is_ok());
         }

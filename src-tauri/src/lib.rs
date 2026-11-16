@@ -199,6 +199,7 @@ pub fn run() {
             entry::choose_targets,
             entry::choose_badge,
             entry::select_badge,
+            entry::clear_badge,
             entry::set_text_badge,
             entry::get_badge_mask,
             entry::finder_selection,

@@ -68,9 +68,9 @@ export default function App({ appearance }: { appearance: AppearanceController }
   useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const matchingIcons = searchIcons(query, category);
   const entry = session?.entry;
-  const badgeId = entry?.badge.id ?? "code";
+  const badgeId = entry?.badge.id ?? "";
   const badgeSource = imported?.id === badgeId ? imported.url : null;
-  const imageBadge = !!entry && entry.badge.text == null && !icons.some(icon => icon.id === badgeId);
+  const imageBadge = !!entry && !!badgeId && entry.badge.text == null && !icons.some(icon => icon.id === badgeId);
   const renderParams = localParams ?? entry?.params ?? defaultParams;
   const previewReady = !paramsPending && readyBadgeId === JSON.stringify([badgeId, renderParams]) && !!badgeSource && !entry?.badgeError && !entry?.importing && !textQueued;
   const textBadgeError = entry?.badgeError?.code === "text_error" ? entry.badgeError : null;
@@ -83,7 +83,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
     let active = true;
     let url: string | undefined;
     setImported(null);
-    if (entry) {
+    if (entry && badgeId) {
       void invoke<string>("get_badge_mask", { badgeId }).then(png => {
         if (!active) return;
         const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
@@ -332,7 +332,10 @@ export default function App({ appearance }: { appearance: AppearanceController }
         </div>
         <div className="icon-grid" role="group" aria-label={t("badge.heading")}>
           {matchingIcons.map(icon => <button key={icon.id} disabled={busy || textQueued || paramsPending} className="badge-choice" aria-pressed={badgeId === icon.id}
-            onClick={() => command("select_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null, badgeId: icon.id })}>
+            title={badgeId === icon.id ? t("icons.toggleOff") : undefined}
+            onClick={() => badgeId === icon.id
+              ? command("clear_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null })
+              : command("select_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null, badgeId: icon.id })}>
             <img src={thumbnails[`./assets/${icon.id}.svg`]} alt="" />{t(icon.name)}
           </button>)}
         </div>
@@ -342,7 +345,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {session && <TextBadge locale={locale} session={session} disabled={busy || paramsPending} refresh={refreshSession} onPending={onTextPending} />}
         {textBadgeError && <div className="badge-error">
           <p role="alert" className="error">{errorMessage(locale, textBadgeError)}</p>
-          {textErrorRecoverable && <button disabled={busy || textQueued || paramsPending} onClick={recoverBadge}>{t("badge.recover")}</button>}
+          {textErrorRecoverable && !!badgeId && <button disabled={busy || textQueued || paramsPending} onClick={recoverBadge}>{t("badge.recover")}</button>}
         </div>}
         {entry?.badge.text != null && <p className="muted">{translate(locale, "text.active", { text: entry.badge.text })}</p>}
         </div>
@@ -350,6 +353,8 @@ export default function App({ appearance }: { appearance: AppearanceController }
           <div className="image-import">
             {imageBadge && badgeSource && <img className="image-thumbnail" src={badgeSource} alt={t("badge.imported")} />}
             <button aria-describedby="badge-image-hint" disabled={busy || textQueued || paramsPending || entry?.importing} onClick={() => command("choose_badge")}>{t(imageBadge ? "badge.replace" : "badge.import")}</button>
+            {imageBadge && <button className="quiet" disabled={busy || textQueued || paramsPending || entry?.importing}
+              onClick={() => command("clear_badge", { expectedEditRevision: entry!.editRevision, operationId: progress?.operationId ?? null })}>{t("badge.removeImage")}</button>}
           </div>
           <p id="badge-image-hint" className="muted">{t("badge.importHint")}</p>
           <fieldset className="badge-effects" disabled={!imageBadge || busy || textQueued || paramsPending || entry?.importing}>
@@ -361,7 +366,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
           {entry?.badge.opaque && <p id="badge-opaque-hint" role="status" className="muted">{t("badge.opaque")}</p>}
           {imageBadgeError && <div className="badge-error">
             <p role="alert" className="error">{errorMessage(locale, imageBadgeError)}</p>
-            <button disabled={busy || textQueued || paramsPending} onClick={recoverBadge}>{t("badge.recover")}</button>
+            {!!badgeId && <button disabled={busy || textQueued || paramsPending} onClick={recoverBadge}>{t("badge.recover")}</button>}
           </div>}
         </div>
         {entry?.importing && <p role="status" className="muted">{t("badge.loading")}</p>}

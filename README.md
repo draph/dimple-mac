@@ -12,7 +12,7 @@ Dimple is built with Tauri v2, Rust, React, TypeScript, Vite, and Tailwind.
 - Choose a built-in badge, import a PNG, static SVG, or JPG/JPEG, or type 1–4 visible characters.
 - Preview the result and optionally adjust scale, position, and folder color.
 - Open the panel from the menu bar, the global shortcut (**⌥F** by default), a Finder service, or by dragging folders in.
-- Restore the system default icon after confirmation; overwriting and restoring are irreversible.
+- Clear the custom icon after confirmation to return to the system default; overwriting and clearing are irreversible.
 - Work offline with no account, telemetry, or uploads.
 
 ## Installation
@@ -35,7 +35,7 @@ Reading the Finder selection requests Finder automation permission on first use;
 
 Input above 100 folders, mixed folders and badges, or an entirely invalid selection is rejected with a message and the previous targets are kept. Partial batch results offer **Retry Failed**, **Continue Remaining**, and **Stop Remaining**. A write that times out is not cancelled; wait for its result.
 
-**Restore Default Icon** returns folders to the system icon and does not recover previous custom icons. Import limits and rejected SVG features are reported in the panel, and **Adjustments** controls scale, position, and folder color.
+**Clear Folder Icon** returns folders to the system icon and does not recover previous custom icons. Import limits and rejected SVG features are reported in the panel, and **Adjustments** controls scale, position, and folder color.
 
 **Settings** holds appearance (System/Dark/Light), language (Follow System, 简体中文, English; resolved at startup), the global shortcut, the installed version, and **Check for updates**, which only runs when clicked.
 
@@ -88,7 +88,7 @@ Outputs are `macos/Dimple.app` and `dmg/Dimple_1.0.0_universal.dmg` under `src-t
 
 ## Uninstall
 
-Restore default icons in the app first if you want them back. Quit Dimple from the menu bar, then move it to the Trash. Removing the app does not affect icons already applied or restore overwritten custom icons. Optionally delete `~/Library/Application Support/com.draph.dimple/shortcut.json` and `language.json`.
+Remove folder icons in the app first if you want the system defaults back. Quit Dimple from the menu bar, then move it to the Trash. Removing the app does not affect icons already applied or restore overwritten custom icons. Optionally delete `~/Library/Application Support/com.draph.dimple/shortcut.json` and `language.json`.
 
 ## License and upstream
 
