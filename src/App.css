@@ -114,7 +114,7 @@ dialog p { margin-bottom: 8px; }
 .folder-selection-options button { width: 100%; text-align: left; border-color: transparent; }
 .folder-selection-options button:focus-visible { outline: none; box-shadow: inset 0 0 0 100px var(--button-hover); }
 .target-list { max-height: 160px; }
-.target h2 { margin-bottom: 4px; }
+.target h2 { margin-bottom: 6px; color: inherit; }
 .editor-scroll > .badge-section { flex: 1 0 auto; display: flex; flex-direction: column; }
 .badge-section > * { flex-shrink: 0; }
 .badge-section > .muted { margin-top: 8px; }
