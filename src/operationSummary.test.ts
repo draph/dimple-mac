@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { OperationProgress } from "./contracts.ts";
-import { operationSummary } from "./operationSummary.ts";
+import { operationSucceeded, operationSummary } from "./operationSummary.ts";
 
 function progress(statuses: OperationProgress["items"][number]["status"][], phase: OperationProgress["phase"] = "completed"): OperationProgress {
   return {
@@ -9,6 +9,15 @@ function progress(statuses: OperationProgress["items"][number]["status"][], phas
     items: statuses.map((status, index) => ({ targetId: String(index), status, error: null })),
   };
 }
+
+test("only nonempty completed all-success results count as succeeded", () => {
+  assert.equal(operationSucceeded(progress(["succeeded"])), true);
+  assert.equal(operationSucceeded(progress(["succeeded", "succeeded"])), true);
+  assert.equal(operationSucceeded(progress([])), false);
+  assert.equal(operationSucceeded(progress(["succeeded"], "running")), false);
+  assert.equal(operationSucceeded(progress(["succeeded", "failed"])), false);
+  assert.equal(operationSucceeded(progress(["succeeded", "unknown"])), false);
+});
 
 test("only nonempty completed all-success results get the success sentence", () => {
   assert.equal(operationSummary("zh-Hans", progress(["succeeded"])), "已更新 1 个目录的图标。");

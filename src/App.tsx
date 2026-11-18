@@ -16,7 +16,7 @@ import { Adjustments } from "./Adjustments";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { FolderSelectionMenu } from "./FolderSelectionMenu";
 import { defaultParams } from "./renderParams";
-import { operationSummary } from "./operationSummary";
+import { operationSucceeded, operationSummary } from "./operationSummary";
 import type { AppearanceController } from "./appearance";
 import { acceptLanguage, type LanguagePreference, type LanguageStatus } from "./language";
 export default function App({ appearance }: { appearance: AppearanceController }) {
@@ -383,10 +383,10 @@ export default function App({ appearance }: { appearance: AppearanceController }
         {progress.items.some(item => item.status === "unknown") && <p role="alert">{t(progress.phase === "running" ? "operation.waiting" : "operation.uncertain")}</p>}
         {progress.stopped && <p>{t("operation.stopped")}</p>}
         {progress.items.filter(item => item.status === "running" || item.status === "unknown").map(item => <p className="path" key={item.targetId}>{entry?.items.find(t => t.id === item.targetId)?.path}</p>)}
-        <details><summary>{t("operation.details")}</summary><ul className="operation-results">{progress.items.map(item => <li key={item.targetId}>
+        {!operationSucceeded(progress) && <details><summary>{t("operation.details")}</summary><ul className="operation-results">{progress.items.map(item => <li key={item.targetId}>
           <p className="path">{entry?.items.find(t => t.id === item.targetId)?.path}</p><p>{t(`operation.${item.status}`)}</p>
           {item.error && <p className="error">{errorMessage(locale, item.error)}</p>}
-        </li>)}</ul></details>
+        </li>)}</ul></details>}
       </section>}
       {prepared && !prepared.confirmationToken && <button disabled={submitting} onClick={() => void confirm(true)}>{t("operation.cancel")}</button>}
       </div>}

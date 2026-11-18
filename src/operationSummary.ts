@@ -1,6 +1,11 @@
 import type { OperationProgress } from "./contracts";
 import { translate, type Locale } from "./i18n.ts";
 
+export function operationSucceeded(progress: OperationProgress): boolean {
+  return progress.phase === "completed" && progress.items.length > 0
+    && progress.items.every(item => item.status === "succeeded");
+}
+
 export function operationSummary(locale: Locale, progress: OperationProgress): string {
   const total = progress.items.length;
   if (progress.phase !== "completed") {
@@ -9,7 +14,7 @@ export function operationSummary(locale: Locale, progress: OperationProgress): s
       total,
     });
   }
-  if (total > 0 && progress.items.every(item => item.status === "succeeded")) {
+  if (operationSucceeded(progress)) {
     return translate(locale, total === 1 ? "operation.success.one" : "operation.success.other", { total });
   }
   return (["succeeded", "failed", "pending", "unknown", "running"] as const).flatMap(status => {
