@@ -12,7 +12,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const png = btoa(String.fromCharCode(...new Uint8Array(await (await fetch('/tests/fixtures/badges/color/normalized/color-svg.png')).arrayBuffer())));
 const entry = {params:{...defaultParams},badge:{id:'badge-test',width:80,height:48,opaque:false,effects:['engraved','original'],text:null},badgeError:null,importing:false,text:null,textCount:null,textPending:false,revision:1,editRevision:1,source:'picker',items:[{id:'folder',path:'/tmp/isolated-test',actualPath:'/tmp/isolated-test',linked:false,kind:'directory',error:null}],issues:[],error:null,choosing:false,reading:false,checking:false,preparing:false};
 const session = {version:'test',locale:'en',entry,operation:{canStop:false,canRetry:false,canContinue:false,revision:1,prepared:null,progress:null}};
-let release, updates=0, prepared;
+let release, holdUpdate=true, updates=0, prepared;
 mockIPC(async (cmd,args)=>{
   if(cmd==='get_session')return structuredClone(session);
   if(cmd==='get_language')return {locale:'en',preference:'system',saved:false,revision:0};
@@ -21,7 +21,10 @@ mockIPC(async (cmd,args)=>{
   if(cmd==='get_shortcut_settings')return {settings:{enabled:false,shortcut:'alt+KeyF'},active:[],uncertain:[],saved:false,error:null,open:false,capturing:false};
   if(cmd==='set_render_params'){
     updates++;
-    if(release===undefined)await new Promise(done=>release=done);
+    if(holdUpdate){
+      holdUpdate=false;
+      await new Promise(done=>release=done);
+    }
     if(args.expectedEditRevision!==entry.editRevision)throw Error('stale edit');
     entry.params=structuredClone(args.params); entry.editRevision++; entry.revision++; return;
   }
@@ -41,6 +44,11 @@ try{
  await act(async()=>{original().click(); original().click(); document.querySelector('.action-bar .primary').click();});
  check(updates===1,'Rapid effect clicks submit one parameter edit');
  check(document.querySelector('.action-bar .primary').disabled&&!prepared,'Apply must wait for the effect edit and preview');
+ const toggle=()=>document.querySelector('.adjustments-trigger').click();
+ await act(async()=>toggle());
+ check(document.querySelector('#adjustments-panel fieldset').disabled,'Adjustments must wait for the effect edit');
+ await act(async()=>toggle());
+ check(document.querySelector('.action-bar .primary').disabled,'Closing adjustments must leave the effect edit pending');
  await act(async()=>release());
  await settle(()=>!document.querySelector('.action-bar .primary').disabled);
  check(original().checked&&entry.params.effect==='original','The accepted effect must reach the preview');
@@ -48,6 +56,48 @@ try{
  await act(async()=>[...document.querySelectorAll('#adjustments-panel button')].find(b=>b.textContent==='Reset adjustments').click());
  await settle(()=>updates===2&&!document.querySelector('.action-bar .primary').disabled);
  check(entry.params.effect==='original','Reset must preserve original colors');
+ const panel=()=>document.querySelector('#adjustments-panel');
+ const hex=()=>panel().querySelector('input[type="text"]');
+ const applyDisabled=()=>document.querySelector('.action-bar .primary').disabled;
+ const escape=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+ const enterColor=async value=>act(async()=>{
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(hex(),value);
+   hex().dispatchEvent(new Event('input',{bubbles:true}));
+ });
+ for(const close of [
+   escape,
+   ()=>document.querySelector('#target-heading').click(),
+   ()=>document.querySelector('#badge-tab-icon').click(),
+   ()=>emit('panel-visibility',false),
+ ]){
+   if(panel().hidden)await act(async()=>toggle());
+   await enterColor('#ABC');
+   check(hex().getAttribute('aria-invalid')==='true'&&applyDisabled(),'Invalid color must block Apply');
+   await act(async()=>close());
+   check(panel().hidden&&hex().value==='#808080'&&hex().getAttribute('aria-invalid')==='false',
+     'Closing adjustments must discard the invalid draft and restore the latest valid color');
+   await act(async()=>emit('panel-visibility',true));
+   await settle(()=>!applyDisabled());
+ }
+ await act(async()=>document.querySelector('#badge-tab-image').click());
+ await act(async()=>toggle());
+ const canvas=document.querySelector('.preview canvas');
+ const beforeColor=canvas.toDataURL();
+ holdUpdate=true;
+ release=undefined;
+ await enterColor('#EF4444');
+ await settle(()=>!!release&&!canvas.hidden&&canvas.toDataURL()!==beforeColor);
+ const pendingPreview=canvas.toDataURL();
+ await enterColor('#EF4');
+ await act(async()=>escape());
+ await settle(()=>!canvas.hidden);
+ check(panel().hidden&&hex().value==='#EF4444'&&hex().getAttribute('aria-invalid')==='false',
+   'Closing during an edit must restore the pending valid color');
+ check(canvas.toDataURL()===pendingPreview&&applyDisabled()&&entry.params.theme==='native',
+   'The pending edit must keep its preview and block Apply until the request completes');
+ await act(async()=>release());
+ await settle(()=>!applyDisabled());
+ check(entry.params.theme==='#EF4444'&&hex().value==='#EF4444','The accepted color must remain after closing');
  await act(async()=>document.querySelector('.action-bar .primary').click());
  await settle(()=>!!prepared);
  check(prepared.action.params.effect==='original'&&prepared.action.images.length===7,'Apply must freeze the accepted effect and all seven images');

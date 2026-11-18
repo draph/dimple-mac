@@ -4,7 +4,7 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, io::Cursor};
+use std::{collections::HashSet, io::Cursor, sync::Arc};
 const SIZES: [u32; 7] = [16, 32, 64, 128, 256, 512, 1024];
 const ICNS_TYPES: [(&str, u32); 10] = [
     ("ic04", 16),
@@ -202,11 +202,9 @@ pub fn validate(input: &Request) -> Result<Vec<Vec<u8>>, AppError> {
 }
 #[derive(Clone)]
 pub struct Prepared {
-    pub mask: Option<std::sync::Arc<crate::assets::Mask>>,
     pub id: String,
-    pub request: Request,
     pub targets: Vec<Target>,
-    pub icon: Option<Vec<u8>>,
+    pub icon: Option<Arc<[u8]>>,
     pub fingerprints: Vec<Result<crate::icon::Fingerprint, AppError>>,
     pub token: String,
     pub confirmation_ids: Option<Vec<String>>,
@@ -265,31 +263,24 @@ impl Progress {
     }
 }
 impl Prepared {
-    pub fn new(request: Request, targets: Vec<Target>) -> Self {
+    pub(crate) fn new(icon: Option<Arc<[u8]>>, targets: Vec<Target>) -> Self {
         Self {
-            mask: None,
             id: targets::next_id("operation"),
-            request,
             targets,
-            icon: None,
+            icon,
             fingerprints: vec![],
             token: targets::next_id("confirmation"),
             confirmation_ids: None,
             previous: None,
         }
     }
-    pub fn build(
-        request: Request,
-        targets: Vec<Target>,
-        images: Vec<Vec<u8>>,
-    ) -> Result<Self, AppError> {
-        let mut p = Self::new(request, targets);
-        if let Action::Apply {
-            images: supplied, ..
-        } = &p.request.action
-        {
-            p.icon = Some(encode_icns(supplied, &images)?);
-        }
+    pub fn build(request: Request, targets: Vec<Target>) -> Result<Self, AppError> {
+        let icon = match &request.action {
+            Action::Apply { images, .. } => Some(encode_icns(images, &validate(&request)?)?.into()),
+            Action::Restore {} => None,
+        };
+        drop(request);
+        let mut p = Self::new(icon, targets);
         p.refresh()?;
         Ok(p)
     }
@@ -304,9 +295,8 @@ impl Prepared {
             return !ids.is_empty();
         }
         self.targets.iter().zip(&self.fingerprints).any(|(t, f)| {
-            f.as_ref().is_ok_and(|f| {
-                matches!(self.request.action, Action::Restore {}) || t.linked || f.has_icon()
-            })
+            f.as_ref()
+                .is_ok_and(|f| self.icon.is_none() || t.linked || f.has_icon())
         })
     }
     pub fn summary(&self) -> Summary {
@@ -335,7 +325,7 @@ impl Prepared {
                 .filter(|(_, f)| f.as_ref().is_ok_and(|f| f.has_icon()))
                 .map(|(t, _)| t.id.clone())
                 .collect(),
-            restore: matches!(self.request.action, Action::Restore {}),
+            restore: self.icon.is_none(),
             confirmation_token: self.needs_confirmation().then(|| self.token.clone()),
             commit_available: true,
         }

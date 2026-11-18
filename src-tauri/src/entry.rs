@@ -397,6 +397,9 @@ fn check_paths_current(
     paths: Vec<PathBuf>,
     current: impl Fn() -> bool,
 ) -> Result<Vec<InputItem>, &'static str> {
+    if paths.is_empty() {
+        return Ok(vec![]);
+    }
     let badge_candidate = paths.len() == 1
         && paths[0].extension().is_some_and(|e| {
             ["png", "svg", "jpg", "jpeg"]
@@ -1073,13 +1076,8 @@ fn complete_read(
 fn finish_finder(s: &mut Snapshot, automatic: bool, result: Result<Vec<InputItem>, &'static str>) {
     if automatic
         && s.operation.is_none()
-        && !matches!(
-            &result,
-            Err("limit" | "mixed" | "budget" | "multipleBadges")
-        )
-        && !result
-            .as_ref()
-            .is_ok_and(|items| items.iter().any(|i| i.kind == "badge"))
+        && (s.items.is_empty() || s.source == "finder-auto")
+        && result.as_ref().is_ok_and(Vec::is_empty)
     {
         s.items.clear();
         edited(s);
@@ -1220,23 +1218,19 @@ pub async fn prepare_operation<R: tauri::Runtime>(
     request: String,
 ) -> Result<operation::Summary, AppError> {
     let input = operation::parse(&request)?;
-    let (selected, token, mask) = {
+    drop(request);
+    let (selected, token) = {
         let inbox = app.state::<Inbox>();
         let mut s = inbox.0.lock().unwrap();
         let selected = begin_prepare(&mut s, &input)?;
         let token = s.request;
-        let mask = s.mask.clone();
         commit_update(&app, s);
-        (selected, token, mask)
+        (selected, token)
     };
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let images = operation::validate(&input)?;
-        let mut prepared = operation::Prepared::build(input, selected, images)?;
-        prepared.mask = mask;
-        Ok(prepared)
-    })
-    .await
-    .unwrap_or_else(|_| Err(AppError::reason("invalid_input", "check")));
+    let result =
+        tauri::async_runtime::spawn_blocking(move || operation::Prepared::build(input, selected))
+            .await
+            .unwrap_or_else(|_| Err(AppError::reason("invalid_input", "check")));
     let inbox = app.state::<Inbox>();
     let mut s = inbox.0.lock().unwrap();
     let result = finish_prepare(&mut s, token, result);
@@ -1305,7 +1299,6 @@ fn begin_recovery(
         .collect();
     (p.targets, p.fingerprints) = selected.into_iter().unzip();
     p.id = targets::next_id("operation");
-    p.request.target_ids = ids;
     p.previous = Some(previous);
     p.confirmation_ids = Some(vec![]);
     s.preparing = true;
@@ -1818,12 +1811,8 @@ mod tests {
                 super::update(app.handle(), |s| match case {
                     0 => s.preparing = true,
                     1 => {
-                        let request = crate::operation::parse(
-                            r#"{"revision":0,"targetIds":["x"],"action":{"type":"restore"}}"#,
-                        )
-                        .unwrap();
                         s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
-                            request,
+                            None,
                             vec![],
                         )));
                     }
@@ -1988,12 +1977,8 @@ mod tests {
         }
     }
     fn completed_operation() -> crate::operation::Progress {
-        let request = crate::operation::parse(
-            r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
-        )
-        .unwrap();
         let mut progress =
-            crate::operation::Progress::new(&crate::operation::Prepared::new(request, vec![]));
+            crate::operation::Progress::new(&crate::operation::Prepared::new(None, vec![]));
         progress.phase = "completed".into();
         progress
     }
@@ -2025,12 +2010,8 @@ mod tests {
                 3 => s.active_read = Some(1),
                 4 => s.preparing = true,
                 _ => {
-                    let request = crate::operation::parse(
-                        r#"{"revision":0,"targetIds":["x"],"action":{"type":"restore"}}"#,
-                    )
-                    .unwrap();
                     s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
-                        request,
+                        None,
                         vec![],
                     )));
                 }
@@ -2415,11 +2396,7 @@ mod tests {
     }
     #[test]
     fn commit_claim_is_single_use_and_confirmation_is_bound() {
-        let r = crate::operation::parse(
-            r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#,
-        )
-        .unwrap();
-        let mut p = crate::operation::Prepared::new(r, vec![]);
+        let mut p = crate::operation::Prepared::new(None, vec![]);
         p.confirmation_ids = Some(vec!["x".into()]);
         let p = std::sync::Arc::new(p);
         let mut s = super::Snapshot {
@@ -2445,11 +2422,7 @@ mod tests {
     }
     #[test]
     fn normal_quit_stops_scheduling_and_keeps_the_inflight_slot() {
-        let r = crate::operation::parse(
-            r#"{"revision":1,"targetIds":["x"],"action":{"type":"restore"}}"#,
-        )
-        .unwrap();
-        let p = std::sync::Arc::new(crate::operation::Prepared::new(r, vec![]));
+        let p = std::sync::Arc::new(crate::operation::Prepared::new(None, vec![]));
         let state = super::Snapshot {
             prepared: Some(p.clone()),
             operation: Some(crate::operation::Progress::new(&p)),
@@ -2594,23 +2567,15 @@ mod tests {
         s.request += 1;
         super::clear_automatic(&mut s, old);
         assert_eq!(s.items.len(), 3);
-        let r = crate::operation::parse(
-            r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
-        )
-        .unwrap();
-        let prepared = crate::operation::Prepared::new(r, vec![]);
+        let prepared = crate::operation::Prepared::new(None, vec![]);
         assert!(super::finish_prepare(&mut s, old, Ok(prepared)).is_err());
         assert!(s.prepared.is_none());
     }
     #[test]
     fn automatic_limits_preserve_ids_order_and_prepared_context() {
         let mut s = targets();
-        let request = crate::operation::parse(
-            r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
-        )
-        .unwrap();
         s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
-            request,
+            None,
             vec![],
         )));
         let operation = s.prepared.as_ref().unwrap().id.clone();
@@ -2626,6 +2591,7 @@ mod tests {
     fn tauri_ipc_prepares_cancels_recovers_and_protects_confirmation() {
         let _serial = crate::icon::NATIVE_TEST_LOCK.lock().unwrap();
         use serde_json::{Value, json};
+        use tauri::Manager;
         struct Temp(std::path::PathBuf);
         impl Drop for Temp {
             fn drop(&mut self) {
@@ -2837,6 +2803,7 @@ mod tests {
         let p = apply();
         assert!(p["confirmationToken"].is_string());
         assert_eq!(p["overwriteTargetIds"].as_array().unwrap().len(), 1);
+        assert_eq!(p["restore"], false);
         let before = crate::icon::fingerprint(&temp.0).unwrap();
         assert!(
             ipc(
@@ -2848,6 +2815,12 @@ mod tests {
         ipc("cancel_prepared", json!({"operationId":p["operationId"]})).unwrap();
         assert_eq!(crate::icon::fingerprint(&temp.0).unwrap(), before);
         let p = apply();
+        let inbox = app.state::<super::Inbox>();
+        let prepared_icon = || {
+            let s = inbox.0.lock().unwrap();
+            s.prepared.as_ref().unwrap().icon.clone().unwrap()
+        };
+        let original = prepared_icon();
         let other =
             std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/32x32.png"))
                 .unwrap();
@@ -2861,6 +2834,7 @@ mod tests {
         let renewed = wait()["prepared"].clone();
         assert!(renewed.is_object());
         assert_ne!(renewed["confirmationToken"], p["confirmationToken"]);
+        assert!(std::sync::Arc::ptr_eq(&original, &prepared_icon()));
         assert_eq!(crate::icon::fingerprint(&temp.0).unwrap(), changed);
         assert!(
             ipc(
@@ -2875,6 +2849,8 @@ mod tests {
         )
         .unwrap();
         let p = prepare(json!({"type":"restore"})).unwrap();
+        assert_eq!(p["restore"], true);
+        assert!(p["confirmationToken"].is_string());
         ipc(
             "commit_operation",
             json!({"operationId":p["operationId"],"confirmationToken":p["confirmationToken"]}),
@@ -2980,8 +2956,7 @@ mod tests {
         };
         let input = crate::operation::parse(&serde_json::json!({"revision":state.revision,"targetIds":state.items.iter().map(|i| &i.id).collect::<Vec<_>>(),"action":action}).to_string()).unwrap();
         let selected = super::begin_prepare(&mut state, &input).unwrap();
-        let images = crate::operation::validate(&input).unwrap();
-        let p = crate::operation::Prepared::build(input, selected, images).unwrap();
+        let p = crate::operation::Prepared::build(input, selected).unwrap();
         state.preparing = false;
         let app = tauri::test::mock_builder()
             .manage(crate::panel::Startup::default())
@@ -3044,6 +3019,10 @@ mod tests {
             let writer = move |target: &crate::targets::Target,
                                expected: &crate::icon::Fingerprint,
                                icon: Option<&[u8]>| {
+                assert_eq!(icon.is_none(), restore);
+                if let Some(icon) = icon {
+                    assert!(std::ptr::eq(icon, original_icon.as_deref().unwrap()));
+                }
                 recorded.lock().unwrap().push(target.id.clone());
                 crate::icon::write(target, expected, icon)
             };
@@ -3087,11 +3066,11 @@ mod tests {
                 "unchanged original consent is reusable"
             );
             assert_ne!(renewed.id, old_id);
-            assert_eq!(renewed.icon, original_icon);
+            assert_eq!(renewed.icon.is_none(), restore);
             assert_eq!(renewed.targets.len(), 1);
-            assert!(
-                matches!(renewed.request.action, crate::operation::Action::Restore {}) == restore
-            );
+            if let Some(icon) = &renewed.icon {
+                assert!(std::sync::Arc::ptr_eq(icon, p.icon.as_ref().unwrap()));
+            }
             let renewed = claimed(&app, renewed);
             super::execute_with_writer(
                 app.handle().clone(),
@@ -3171,6 +3150,10 @@ mod tests {
             super::cancel_prepared(app.handle().clone(), cancelled_id.clone()).unwrap();
             let renewed = recovery(&app, super::RecoveryMode::ContinuePending);
             assert_eq!(renewed.targets.len(), 2);
+            assert_eq!(renewed.icon.is_none(), restore);
+            if let Some(icon) = &renewed.icon {
+                assert!(std::sync::Arc::ptr_eq(icon, p.icon.as_ref().unwrap()));
+            }
             let ids: Vec<_> = renewed.targets.iter().map(|t| t.id.clone()).collect();
             let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
             let recorded = calls.clone();
@@ -3486,9 +3469,10 @@ mod tests {
         assert!(super::check_paths(paths).is_err());
         assert_eq!(s.items.len(), 100);
         assert!(super::all_succeeded(&s));
-        let mut ids = p.request.target_ids.clone();
+        let mut ids: Vec<_> = p.targets.iter().map(|t| t.id.clone()).collect();
         ids.push("extra".into());
         assert!(crate::operation::resolve(&ids, &p.targets).is_err());
+        ids.pop();
         for target in &p.targets {
             assert_eq!(
                 std::fs::read(target.path.join("body.txt")).unwrap(),
@@ -3499,9 +3483,12 @@ mod tests {
         let revision = s.edit_revision;
         super::accept_edit(&mut s, revision, Some(&p.id)).unwrap();
         drop(s);
-        let request = crate::operation::parse(&serde_json::json!({"revision":1,"targetIds":p.request.target_ids,"action":{"type":"restore"}}).to_string()).unwrap();
-        let restored =
-            crate::operation::Prepared::build(request, p.targets.clone(), vec![]).unwrap();
+        let request = crate::operation::parse(
+            &serde_json::json!({"revision":1,"targetIds":ids,"action":{"type":"restore"}})
+                .to_string(),
+        )
+        .unwrap();
+        let restored = crate::operation::Prepared::build(request, p.targets.clone()).unwrap();
         let restored = claimed(&app, restored);
         super::execute_operation(app.handle().clone(), restored);
         assert!(super::all_succeeded(&inbox.0.lock().unwrap()));
@@ -3739,12 +3726,8 @@ mod tests {
                 4 => s.active_read = Some(1),
                 5 => s.preparing = true,
                 6 => {
-                    let request = crate::operation::parse(
-                        r#"{"revision":7,"targetIds":["x"],"action":{"type":"restore"}}"#,
-                    )
-                    .unwrap();
                     s.prepared = Some(std::sync::Arc::new(crate::operation::Prepared::new(
-                        request,
+                        None,
                         vec![],
                     )));
                 }
@@ -4459,22 +4442,68 @@ mod tests {
         assert_eq!(s.source, "picker");
     }
     #[test]
-    fn failed_reads_clear_only_automatic_targets_without_results() {
+    fn finder_reads_clear_only_when_automatic_selection_is_empty() {
+        let invalid = super::InputItem {
+            path: "/tmp/invalid".into(),
+            kind: "invalid",
+            error: Some("invalid".into()),
+            ..Default::default()
+        };
         for automatic in [true, false] {
             for context in [true, false] {
-                for result in [Ok(vec![]), Err("invalid"), Err("finderDenied")] {
+                for (result, reason) in [
+                    (super::check_paths(vec![]), "empty"),
+                    (Ok(vec![invalid.clone()]), "invalid"),
+                    (Err("finderFailed"), "finderFailed"),
+                ] {
                     let mut s = targets();
                     if context {
                         s.operation = Some(completed_operation());
                     }
-                    let clears = automatic && !context;
-                    super::finish_finder(&mut s, automatic, result);
-                    assert_eq!(s.items.is_empty(), clears);
+                    let before = serde_json::to_value(&s.items).unwrap();
+                    let clears = automatic && !context && reason == "empty";
+                    let (request, generation) = super::claim_finder_read(&mut s, None).unwrap();
+                    super::complete_read(&mut s, generation, request, automatic, result);
+                    if clears {
+                        assert!(s.items.is_empty() && s.source.is_empty());
+                    } else {
+                        assert_eq!(serde_json::to_value(&s.items).unwrap(), before);
+                        assert_eq!(s.source, "finder-auto");
+                    }
                     assert_eq!(s.operation.is_some(), context);
-                    assert!(s.error.is_some());
+                    assert_eq!(s.error, Some(reason.into()));
+                    assert_eq!(s.issues.is_empty(), reason != "invalid");
                 }
             }
         }
+        let mut s = targets();
+        let (request, generation) = super::claim_finder_read(&mut s, None).unwrap();
+        let valid = super::InputItem {
+            path: "/tmp/replacement".into(),
+            kind: "directory",
+            ..Default::default()
+        };
+        super::complete_read(
+            &mut s,
+            generation,
+            request,
+            true,
+            Ok(vec![valid.clone(), invalid.clone()]),
+        );
+        assert_eq!(s.items.len(), 1);
+        assert_eq!(s.items[0].path, valid.path);
+        assert_eq!(s.source, "finder-auto");
+        assert_eq!(s.issues.len(), 1);
+        assert_eq!(s.issues[0].path, invalid.path);
+        assert!(s.error.is_none());
+
+        let mut s = super::Snapshot::default();
+        super::finish_finder(&mut s, true, Ok(vec![invalid]));
+        assert_eq!(s.issues.len(), 1);
+        assert!(s.source.is_empty());
+        super::finish_finder(&mut s, true, super::check_paths(vec![]));
+        assert!(s.issues.is_empty());
+        assert_eq!(s.error, Some("empty".into()));
     }
     #[test]
     fn automatic_clear_preserves_a_completed_result() {

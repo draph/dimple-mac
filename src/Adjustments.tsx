@@ -74,6 +74,13 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
   const latest = useRef({ session, refresh, onChange }); latest.current = { session, refresh, onChange };
   const invalidRef = useRef(false);
   const value = useRef(params);
+  useLayoutEffect(() => {
+    if (open || !invalidRef.current) return;
+    invalidRef.current = false;
+    setInvalid(false);
+    setColor(value.current.theme === "native" ? "#808080" : value.current.theme);
+    if (!sending.current) latest.current.onChange(null, false);
+  }, [open]);
   const enqueue = (next: RenderParams) => {
     if (!validParams(next)) return;
     value.current = next; setParams(next); setError(null); setInvalid(false); invalidRef.current = false;
@@ -106,6 +113,7 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
         if (active.current) {
           const current = (latest.current.session.entry.revision > context.entry.revision ? latest.current.session : context).entry.params;
           value.current = current; setParams(current);
+          if (!invalidRef.current) setColor(current.theme === "native" ? "#808080" : current.theme);
           latest.current.onChange(null, invalidRef.current);
         }
       }
@@ -137,7 +145,7 @@ export function Adjustments({ locale, session, disabled, refresh, onChange, open
           onChange={event => {
             const input = event.target.value; setColor(input);
             if (/^#[\da-f]{6}$/i.test(input)) enqueue({ ...value.current, theme: input.toUpperCase() });
-            else { invalidRef.current = true; setInvalid(true); latest.current.onChange(null, true); }
+            else { invalidRef.current = true; setInvalid(true); latest.current.onChange(sending.current ? value.current : null, true); }
           }} />
       </label>
       <p id="adjust-hint" className="muted">{t("adjust.hint")}</p>

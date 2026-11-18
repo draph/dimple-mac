@@ -184,9 +184,11 @@ export default function App({ appearance }: { appearance: AppearanceController }
     command("select_badge", { expectedEditRevision: entry.editRevision, operationId: progress?.operationId ?? null, badgeId });
   };
   const effectGuard = useRef(false);
+  const [effectPending, setEffectPending] = useState(false);
   const changeEffect = async (effect: Effect) => {
     if (effectGuard.current || busy || paramsPending || !entry) return;
     effectGuard.current = true;
+    setEffectPending(true);
     const before = current.current;
     const generation = epoch.current;
     onParamsChange({ ...entry.params, effect }, true);
@@ -199,6 +201,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
       if (generation === epoch.current && sameContext(before, current.current)) setFailure({ error });
     } finally {
       effectGuard.current = false;
+      setEffectPending(false);
       onParamsChange(null, false);
     }
   };
@@ -322,7 +325,7 @@ export default function App({ appearance }: { appearance: AppearanceController }
               setAdjustmentsOpen(false); setBadgeTab(next); document.getElementById(`badge-tab-${next}`)?.focus();
             }}>{t(`badge.tab.${tab}`)}{errorTab === tab && <><span className="badge-tab-error" aria-hidden="true" /><span className="sr-only">{t("badge.hasError")}</span></>}</button>)}
         </div>
-        {session && <Adjustments locale={locale} session={session} disabled={busy || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} open={adjustmentsOpen} onOpenChange={setAdjustmentsOpen} />}
+        {session && <Adjustments locale={locale} session={session} disabled={busy || effectPending || textQueued || !!entry?.importing} refresh={refreshSession} onChange={onParamsChange} open={adjustmentsOpen} onOpenChange={setAdjustmentsOpen} />}
         </div>
         <div id="badge-panel-icon" role="tabpanel" aria-labelledby="badge-tab-icon" hidden={badgeTab !== "icon"}>
         <div className="icon-filters">
