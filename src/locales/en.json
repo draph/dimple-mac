@@ -220,7 +220,7 @@
   "settings.title": "Settings",
   "about.title": "About",
   "about.source": "View source",
-  "about.github": "GitHub",
+  "about.repository": "Repository",
   "about.external": " (opens in your default browser)",
   "about.openFailed": "Could not open GitHub. Please try again.",
   "about.name": "Dimple",

@@ -220,7 +220,7 @@
   "settings.title": "设置",
   "about.title": "关于",
   "about.source": "查看源码",
-  "about.github": "GitHub",
+  "about.repository": "源码仓库",
   "about.external": "（在默认浏览器中打开）",
   "about.openFailed": "无法打开 GitHub，请重试。",
   "about.name": "Dimple",

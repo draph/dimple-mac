@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { errorMessage, translate, type Locale } from "./i18n";
 import { checkForUpdate, fetchReleases, type UpdateCheck } from "./update";
 
+const repository = { owner: "draph", name: "dimple-mac" };
+
 type View =
   | { kind: "idle" }
   | { kind: "checking" }
@@ -140,19 +142,22 @@ export function AboutSettings({
         )}
       </div>
       <div className="about-row">
-        <span>{t("about.github")}</span>
-        <a
-          className="about-link"
-          href="https://github.com/draph/dimple-mac"
-          onClick={event => {
-            event.preventDefault();
-            setFailure(null);
-            void invoke("open_project_github").catch(setFailure);
-          }}
-        >
-          {t("about.source")} <span aria-hidden="true">↗</span>
-          <span className="sr-only">{t("about.external")}</span>
-        </a>
+        <span>{t("about.repository")}</span>
+        <span className="about-repo">
+          <span>{repository.owner}/</span>
+          <a
+            className="about-link"
+            href={`https://github.com/${repository.owner}/${repository.name}`}
+            onClick={event => {
+              event.preventDefault();
+              setFailure(null);
+              void invoke("open_project_github").catch(setFailure);
+            }}
+          >
+            {repository.name} <span aria-hidden="true">↗</span>
+            <span className="sr-only">{t("about.source")} {t("about.external")}</span>
+          </a>
+        </span>
       </div>
       {failure != null && <p role="alert" className="error">{errorMessage(locale, failure)}</p>}
     </section>

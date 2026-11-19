@@ -196,6 +196,7 @@ dialog p { margin-bottom: 8px; }
 .about-link:hover { text-decoration: underline; }
 .about-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
 .about-version { flex: none; }
+.about-repo { display: inline-flex; align-items: center; font-size: 12px; }
 .check-updates { flex: none; max-width: 100%; margin-left: auto; padding: 6px 10px; }
 .about-status { flex: 1 1 160px; min-width: 0; text-align: right; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .about-status.error { margin-top: 0; }
